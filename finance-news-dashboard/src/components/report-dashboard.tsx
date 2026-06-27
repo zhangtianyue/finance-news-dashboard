@@ -21,6 +21,7 @@ import type {
   QdiiEtfQuote,
   QdiiEtfGroup,
 } from "@/lib/global-valuations";
+import { ashareDividendRankingLimit } from "@/lib/a-share-dividend-config";
 import type { AshareDividendSnapshot } from "@/lib/a-share-dividends";
 import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 
@@ -443,7 +444,9 @@ function AshareDividendTable({
             <BadgePercent className="size-3.5" />
             A 股股息率排行
           </div>
-          <h2 className="text-xl font-semibold text-slate-950">股息率 Top20 公司</h2>
+          <h2 className="text-xl font-semibold text-slate-950">
+            股息率 Top{ashareDividendRankingLimit} 公司
+          </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             数据来自东方财富分红送配，按最近一个有足够有效样本的报告期排序；股息率为页面披露的
             DIVIDENT_RATIO 口径。
@@ -469,7 +472,9 @@ function AshareDividendTable({
           </div>
         </div>
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-medium text-slate-500">Top20 平均股息率</div>
+          <div className="text-xs font-medium text-slate-500">
+            Top{ashareDividendRankingLimit} 平均股息率
+          </div>
           <div className="mt-2 font-mono text-3xl font-semibold text-red-700">
             {formatStrictPercent(averageYield)}
           </div>
@@ -659,7 +664,7 @@ export function ReportDashboard({
 
   async function refreshDividendStocks() {
     setIsDividendLoading(true);
-    setDividendMessage("正在更新 A 股股息率 Top20...");
+    setDividendMessage(`正在更新 A 股股息率 Top${ashareDividendRankingLimit}...`);
 
     try {
       const response = await fetch("/api/a-share/dividends", {
@@ -725,7 +730,7 @@ export function ReportDashboard({
         ? "全球指数估值雷达"
         : activeView === "qdii"
           ? "大陆上市 QDII ETF"
-          : "A 股股息率 Top20";
+          : `A 股股息率 Top${ashareDividendRankingLimit}`;
 
   return (
     <main className="min-h-screen bg-[#eef2f5] text-slate-950">
@@ -781,7 +786,7 @@ export function ReportDashboard({
                       ? "bg-slate-900 text-white shadow-sm"
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
                   }`}
-                  title="查看 A 股股息率前 20 名公司"
+                  title={`查看 A 股股息率前 ${ashareDividendRankingLimit} 名公司`}
                 >
                   <BadgePercent className="size-3.5" />
                   A股股息
@@ -825,7 +830,7 @@ export function ReportDashboard({
               onClick={refreshDividendStocks}
               disabled={isDividendLoading}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              title="重新拉取 A 股股息率前 20 名公司"
+              title={`重新拉取 A 股股息率前 ${ashareDividendRankingLimit} 名公司`}
             >
               <RefreshCw className={`size-4 ${isDividendLoading ? "animate-spin" : ""}`} />
               {isDividendLoading ? "更新中" : "刷新股息"}

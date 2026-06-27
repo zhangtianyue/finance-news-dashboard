@@ -1,3 +1,5 @@
+import { ashareDividendRankingLimit } from "@/lib/a-share-dividend-config";
+
 export type AshareDividendCompany = {
   rank: number;
   code: string;
@@ -188,7 +190,7 @@ async function fetchDividendRows(reportDate: string) {
       "SECURITY_CODE,SECURITY_NAME_ABBR,MARKET_TYPE,REPORT_DATE,PLAN_NOTICE_DATE,EQUITY_RECORD_DATE,EX_DIVIDEND_DATE,ASSIGN_PROGRESS,PRETAX_BONUS_RMB,DIVIDENT_RATIO,BASIC_EPS,BVPS,PNP_YOY_RATIO,TOTAL_SHARES",
     quoteColumns: "f2,f3,f12,f14,f100",
     pageNumber: 1,
-    pageSize: 20,
+    pageSize: ashareDividendRankingLimit,
     sortColumns: "DIVIDENT_RATIO,SECURITY_CODE",
     sortTypes: "-1,1",
     filter: `(REPORT_DATE='${reportDate}')(DIVIDENT_RATIO>0)`,
@@ -247,7 +249,7 @@ export async function fetchAshareDividendSnapshot(): Promise<AshareDividendSnaps
   for (const reportDate of reportDates) {
     const rows = await fetchDividendRows(reportDate);
     const mappedRows = rows.map((row, index) => mapDividendRow(row, index + 1));
-    if (mappedRows.length >= 20) {
+    if (mappedRows.length >= ashareDividendRankingLimit) {
       const now = new Date();
       return {
         updatedAt: now.toISOString(),
@@ -257,7 +259,7 @@ export async function fetchAshareDividendSnapshot(): Promise<AshareDividendSnaps
         sourceName,
         sourceUrl,
         status: "ok",
-        message: `已按 ${reportLabel(reportDate)} 股息率倒序取前 20 名。`,
+        message: `已按 ${reportLabel(reportDate)} 股息率倒序取前 ${ashareDividendRankingLimit} 名。`,
         rows: mappedRows,
       };
     }
