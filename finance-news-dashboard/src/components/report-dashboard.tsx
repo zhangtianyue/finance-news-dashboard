@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   ArrowUpRight,
+  BadgePercent,
   CheckCircle2,
   Clock3,
   FileText,
@@ -20,10 +21,11 @@ import type {
   QdiiEtfQuote,
   QdiiEtfGroup,
 } from "@/lib/global-valuations";
+import type { AshareDividendSnapshot } from "@/lib/a-share-dividends";
 import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
-type DashboardView = "report" | "valuation" | "qdii";
+type DashboardView = "report" | "valuation" | "qdii" | "dividends";
 
 function sourceLabel(source: SourceId) {
   return {
@@ -101,6 +103,26 @@ function Section({
 function formatMetric(value: number | null, suffix = "") {
   if (value == null) return "N/A";
   return `${value.toFixed(value >= 10 ? 1 : 2)}${suffix}`;
+}
+
+function formatStrictPercent(value: number | null | undefined) {
+  if (value == null) return "N/A";
+  return `${value.toFixed(2)}%`;
+}
+
+function formatStockPrice(value: number | null | undefined) {
+  if (value == null) return "N/A";
+  return value.toFixed(2);
+}
+
+function formatBonus(value: number | null | undefined) {
+  if (value == null) return "N/A";
+  return `10派${value.toFixed(value >= 10 ? 1 : 2)}元`;
+}
+
+function formatShortDate(value: string | null | undefined) {
+  if (!value) return "N/A";
+  return value.slice(5);
 }
 
 function bandClass(band: IndexValuation["valuationBand"]) {
@@ -397,6 +419,158 @@ function QdiiEtfGroups({
   );
 }
 
+function AshareDividendTable({
+  snapshot,
+  isLoading,
+  message,
+}: {
+  snapshot: AshareDividendSnapshot | null;
+  isLoading: boolean;
+  message: string | null;
+}) {
+  const rows = snapshot?.rows ?? [];
+  const averageYield =
+    rows.length > 0
+      ? rows.reduce((sum, row) => sum + (row.dividendYield ?? 0), 0) / rows.length
+      : null;
+  const implementedCount = rows.filter((row) => row.progress === "实施分配").length;
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+            <BadgePercent className="size-3.5" />
+            A 股股息率排行
+          </div>
+          <h2 className="text-xl font-semibold text-slate-950">股息率 Top20 公司</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            数据来自东方财富分红送配，按最近一个有足够有效样本的报告期排序；股息率为页面披露的
+            DIVIDENT_RATIO 口径。
+          </p>
+        </div>
+        <div className="font-mono text-xs text-slate-500">
+          {snapshot ? `${snapshot.reportLabel} / ${snapshot.updatedAtLabel}` : "待更新"}
+        </div>
+      </div>
+
+      {message ? (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <RefreshCw className={`size-4 text-emerald-600 ${isLoading ? "animate-spin" : ""}`} />
+          {message}
+        </div>
+      ) : null}
+
+      <div className="mb-4 grid gap-3 md:grid-cols-3">
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-medium text-slate-500">有效样本</div>
+          <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
+            {rows.length}
+          </div>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-medium text-slate-500">Top20 平均股息率</div>
+          <div className="mt-2 font-mono text-3xl font-semibold text-red-700">
+            {formatStrictPercent(averageYield)}
+          </div>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-medium text-slate-500">已实施分配</div>
+          <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
+            {implementedCount}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            其余可能仍处于董事会或股东大会阶段
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
+        <table className="min-w-[980px] w-full border-collapse text-left text-sm">
+          <thead className="bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th className="px-3 py-2 font-semibold">排名</th>
+              <th className="px-3 py-2 font-semibold">代码/公司</th>
+              <th className="px-3 py-2 text-right font-semibold">现价</th>
+              <th className="px-3 py-2 text-right font-semibold">涨跌幅</th>
+              <th className="px-3 py-2 text-right font-semibold">股息率</th>
+              <th className="px-3 py-2 text-right font-semibold">现金分红</th>
+              <th className="px-3 py-2 font-semibold">进度</th>
+              <th className="px-3 py-2 font-semibold">登记/除息</th>
+              <th className="px-3 py-2 font-semibold">行业</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.length ? (
+              rows.map((row) => (
+                <tr key={row.code} className="align-top hover:bg-slate-50">
+                  <td className="px-3 py-3 font-mono text-xs font-semibold text-slate-500">
+                    {row.rank}
+                  </td>
+                  <td className="px-3 py-3">
+                    <a
+                      href={row.quoteUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-semibold text-slate-950 hover:text-red-700"
+                    >
+                      <span className="font-mono text-xs">{row.code}</span>
+                      {row.name}
+                      <ArrowUpRight className="size-3" />
+                    </a>
+                    <div className="mt-1 text-xs text-slate-500">{row.exchange}</div>
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-950">
+                    {formatStockPrice(row.price)}
+                  </td>
+                  <td
+                    className={`px-3 py-3 text-right font-mono ${metricClass(row.changePct)}`}
+                  >
+                    {formatMetric(row.changePct ?? null, "%")}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono font-semibold text-red-700">
+                    {formatStrictPercent(row.dividendYield)}
+                  </td>
+                  <td className="px-3 py-3 text-right font-mono text-slate-950">
+                    {formatBonus(row.pretaxBonusRmb)}
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className="inline-flex rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
+                      {row.progress ?? "N/A"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 font-mono text-xs text-slate-600">
+                    <div>登记 {formatShortDate(row.equityRecordDate)}</div>
+                    <div className="mt-1">除息 {formatShortDate(row.exDividendDate)}</div>
+                  </td>
+                  <td className="px-3 py-3 text-slate-700">
+                    <div>{row.industry ?? "N/A"}</div>
+                    <a
+                      href={row.detailUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-950"
+                    >
+                      分红明细
+                      <ArrowUpRight className="size-3" />
+                    </a>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-500">
+                  暂无 A 股股息率数据
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export function ReportDashboard({
   initialReport,
   initialValuations,
@@ -410,6 +584,9 @@ export function ReportDashboard({
   const [qdiiQuotes, setQdiiQuotes] = useState<Record<string, QdiiEtfQuote>>({});
   const [isQdiiLoading, setIsQdiiLoading] = useState(false);
   const [qdiiMessage, setQdiiMessage] = useState<string | null>(null);
+  const [dividendSnapshot, setDividendSnapshot] = useState<AshareDividendSnapshot | null>(null);
+  const [isDividendLoading, setIsDividendLoading] = useState(false);
+  const [dividendMessage, setDividendMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [autoRefreshMessage, setAutoRefreshMessage] = useState<string | null>(null);
@@ -480,6 +657,28 @@ export function ReportDashboard({
     }
   }
 
+  async function refreshDividendStocks() {
+    setIsDividendLoading(true);
+    setDividendMessage("正在更新 A 股股息率 Top20...");
+
+    try {
+      const response = await fetch("/api/a-share/dividends", {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`A 股股息率更新失败：${response.status}`);
+      }
+      const data = (await response.json()) as AshareDividendSnapshot;
+      setDividendSnapshot(data);
+      setDividendMessage(data.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "A 股股息率更新失败";
+      setDividendMessage(`${message}，不影响其他栏目使用`);
+    } finally {
+      setIsDividendLoading(false);
+    }
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshReport("auto");
@@ -499,6 +698,34 @@ export function ReportDashboard({
 
     return () => window.clearTimeout(timer);
   }, [activeView, isQdiiLoading, qdiiQuotes]);
+
+  useEffect(() => {
+    if (activeView !== "dividends" || dividendSnapshot || isDividendLoading) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void refreshDividendStocks();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeView, dividendSnapshot, isDividendLoading]);
+
+  const activeTimestamp =
+    activeView === "report"
+      ? report.generatedAtLabel
+      : activeView === "dividends"
+        ? dividendSnapshot?.updatedAtLabel ?? "待更新"
+        : valuations.asOfLabel;
+
+  const activeTitle =
+    activeView === "report"
+      ? "开盘前财经早报"
+      : activeView === "valuation"
+        ? "全球指数估值雷达"
+        : activeView === "qdii"
+          ? "大陆上市 QDII ETF"
+          : "A 股股息率 Top20";
 
   return (
     <main className="min-h-screen bg-[#eef2f5] text-slate-950">
@@ -546,18 +773,27 @@ export function ReportDashboard({
                   <Globe2 className="size-3.5" />
                   QDII ETF
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveView("dividends")}
+                  className={`inline-flex h-8 items-center gap-2 rounded px-3 text-xs font-semibold transition-colors ${
+                    activeView === "dividends"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-white hover:text-slate-950"
+                  }`}
+                  title="查看 A 股股息率前 20 名公司"
+                >
+                  <BadgePercent className="size-3.5" />
+                  A股股息
+                </button>
               </div>
               <span className="inline-flex items-center gap-2 rounded border border-slate-200 px-3 py-1.5 font-mono text-xs text-slate-600">
                 <Clock3 className="size-3.5" />
-                {activeView === "report" ? report.generatedAtLabel : valuations.asOfLabel}
+                {activeTimestamp}
               </span>
             </div>
             <h1 className="text-2xl font-semibold tracking-normal text-slate-950 md:text-4xl">
-              {activeView === "report"
-                ? "开盘前财经早报"
-                : activeView === "valuation"
-                  ? "全球指数估值雷达"
-                  : "大陆上市 QDII ETF"}
+              {activeTitle}
             </h1>
           </div>
 
@@ -582,6 +818,17 @@ export function ReportDashboard({
             >
               <RefreshCw className={`size-4 ${isQdiiLoading ? "animate-spin" : ""}`} />
               {isQdiiLoading ? "更新中" : "刷新 QDII"}
+            </button>
+          ) : activeView === "dividends" ? (
+            <button
+              type="button"
+              onClick={refreshDividendStocks}
+              disabled={isDividendLoading}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              title="重新拉取 A 股股息率前 20 名公司"
+            >
+              <RefreshCw className={`size-4 ${isDividendLoading ? "animate-spin" : ""}`} />
+              {isDividendLoading ? "更新中" : "刷新股息"}
             </button>
           ) : null}
         </div>
@@ -687,12 +934,18 @@ export function ReportDashboard({
           <>
             <ValuationTable snapshot={valuations} />
           </>
-        ) : (
+        ) : activeView === "qdii" ? (
           <QdiiEtfGroups
             groups={valuations.qdiiGroups}
             quotes={qdiiQuotes}
             isLoading={isQdiiLoading}
             message={qdiiMessage}
+          />
+        ) : (
+          <AshareDividendTable
+            snapshot={dividendSnapshot}
+            isLoading={isDividendLoading}
+            message={dividendMessage}
           />
         )}
       </div>
