@@ -3,7 +3,9 @@ export type ValuationRegion =
   | "中国内地"
   | "香港"
   | "日本"
+  | "韩国"
   | "印度"
+  | "越南"
   | "欧洲"
   | "全球";
 
@@ -280,6 +282,21 @@ const rows: Omit<IndexValuation, "valuationBand">[] = [
     note: "比日经225更接近日本全市场大盘估值。",
   },
   {
+    id: "kospi",
+    name: "韩国 KOSPI / MSCI Korea",
+    region: "韩国",
+    proxy: "EWY / 069500.KS",
+    peTtm: 26.4,
+    forwardPe: null,
+    pb: 2.74,
+    dividendYield: 1.0,
+    currency: "KRW",
+    quality: "ETF近似",
+    sourceName: "iShares EWY",
+    sourceUrl: "https://www.ishares.com/us/products/239681/ishares-msci-south-korea-etf",
+    note: "EWY 跟踪 MSCI Korea 25/50，和 KOSPI 不完全一致；三星电子、SK 海力士等科技权重会显著影响估值。",
+  },
+  {
     id: "nifty50",
     name: "NIFTY 50",
     region: "印度",
@@ -293,6 +310,21 @@ const rows: Omit<IndexValuation, "valuationBand">[] = [
     sourceName: "NSE Indices",
     sourceUrl: "https://www.niftyindices.com/indices/equity/broad-based-indices/NIFTY--50",
     note: "长期高 ROE 市场，估值通常高于其他新兴市场。",
+  },
+  {
+    id: "vietnam",
+    name: "越南 VN-Index / VNM",
+    region: "越南",
+    proxy: "VNM / VN30 ETF",
+    peTtm: 14.0,
+    forwardPe: null,
+    pb: 2.05,
+    dividendYield: 0.2,
+    currency: "VND",
+    quality: "ETF近似",
+    sourceName: "VanEck VNM",
+    sourceUrl: "https://www.vaneck.com/us/en/investments/vietnam-etf-vnm/",
+    note: "VNM 跟踪 MarketVector Vietnam Local Index，接近越南本地上市公司篮子；地产、金融和消费权重较高。",
   },
   {
     id: "dax",
