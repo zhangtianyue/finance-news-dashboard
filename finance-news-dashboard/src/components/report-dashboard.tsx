@@ -280,6 +280,15 @@ function metricClass(value: number | null | undefined) {
   return "text-slate-700";
 }
 
+function subscriptionStatusClass(status: string | null | undefined) {
+  if (!status) return "border-slate-200 bg-slate-50 text-slate-600";
+  if (status.includes("开放")) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (status.includes("限")) return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status.includes("场内交易")) return "border-sky-200 bg-sky-50 text-sky-700";
+  if (/暂停|停止|封闭|终止/.test(status)) return "border-red-200 bg-red-50 text-red-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
 function QdiiEtfGroups({
   groups,
   quotes,
@@ -306,7 +315,7 @@ function QdiiEtfGroups({
           </div>
           <h2 className="text-xl font-semibold text-slate-950">按跟踪类型分组</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            这些是 A 股场内可交易的跨境 ETF/QDII 代表产品。价格和涨跌幅来自东方财富，实时估值优先使用东方财富移动端口径；溢价率按场内现价相对实时估值计算。
+            这些是 A 股场内可交易的跨境 ETF/QDII 代表产品。价格和涨跌幅来自东方财富，实时估值优先使用东方财富移动端口径；溢价率按场内现价相对实时估值计算。申购状态和每日申购额度来自东方财富申购状态页，未披露时显示暂无。
           </p>
         </div>
         <div className="font-mono text-xs text-slate-500">
@@ -338,7 +347,7 @@ function QdiiEtfGroups({
             </div>
 
             <div className="overflow-x-auto rounded-md border border-slate-200">
-              <table className="min-w-[820px] w-full border-collapse text-left text-sm">
+              <table className="min-w-[1120px] w-full border-collapse text-left text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
                     <th className="px-3 py-2 font-semibold">代码</th>
@@ -347,6 +356,8 @@ function QdiiEtfGroups({
                     <th className="px-3 py-2 text-right font-semibold">涨跌幅</th>
                     <th className="px-3 py-2 text-right font-semibold">实时估值/时间</th>
                     <th className="px-3 py-2 text-right font-semibold">溢价率</th>
+                    <th className="px-3 py-2 font-semibold">申购状态</th>
+                    <th className="px-3 py-2 text-right font-semibold">每日申购额度</th>
                     <th className="px-3 py-2 text-right font-semibold">成交额</th>
                     <th className="px-3 py-2 font-semibold">跟踪</th>
                   </tr>
@@ -403,6 +414,51 @@ function QdiiEtfGroups({
                           )}`}
                         >
                           {formatMetric(quote?.premiumRate ?? null, "%")}
+                        </td>
+                        <td className="px-3 py-3">
+                          <span
+                            className={`inline-flex rounded border px-2 py-1 text-xs font-semibold ${subscriptionStatusClass(
+                              quote?.subscriptionStatus,
+                            )}`}
+                          >
+                            {quote?.subscriptionStatus ?? "待更新"}
+                          </span>
+                          {quote?.redemptionStatus ? (
+                            <div className="mt-1 text-xs text-slate-500">
+                              赎回 {quote.redemptionStatus}
+                            </div>
+                          ) : null}
+                          {quote?.subscriptionDate ? (
+                            <div className="mt-1 font-mono text-[11px] text-slate-500">
+                              东财 {quote.subscriptionDate}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <div className="font-mono text-slate-950">
+                            {quote?.dailySubscriptionLimit ?? "暂无披露"}
+                          </div>
+                          {quote?.subscriptionMinAmount ? (
+                            <div className="mt-1 text-xs text-slate-500">
+                              起点 {quote.subscriptionMinAmount}
+                            </div>
+                          ) : null}
+                          {quote?.subscriptionNote ? (
+                            <div className="mt-1 text-xs leading-5 text-slate-500">
+                              {quote.subscriptionNote}
+                            </div>
+                          ) : null}
+                          {quote?.subscriptionSourceUrl ? (
+                            <a
+                              href={quote.subscriptionSourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-1 inline-flex items-center justify-end gap-1 text-xs text-slate-500 hover:text-slate-950"
+                            >
+                              {quote.subscriptionSource}
+                              <ArrowUpRight className="size-3" />
+                            </a>
+                          ) : null}
                         </td>
                         <td className="px-3 py-3 text-right font-mono text-slate-700">
                           {formatAmount(quote?.amount)}
@@ -655,7 +711,7 @@ export function ReportDashboard({
 
   async function refreshQdiiQuotes() {
     setIsQdiiLoading(true);
-    setQdiiMessage("正在更新 QDII 价格和溢价率...");
+    setQdiiMessage("正在更新 QDII 价格、溢价率和申购状态...");
 
     try {
       const response = await fetch("/api/qdii/quotes", {
@@ -666,7 +722,7 @@ export function ReportDashboard({
       }
       const data = (await response.json()) as { quotes: Record<string, QdiiEtfQuote> };
       setQdiiQuotes(data.quotes);
-      setQdiiMessage("QDII 价格和溢价率已更新");
+      setQdiiMessage("QDII 价格、溢价率和申购状态已更新");
     } catch (err) {
       const message = err instanceof Error ? err.message : "QDII 行情更新失败";
       setQdiiMessage(`${message}，已保留列表结构`);

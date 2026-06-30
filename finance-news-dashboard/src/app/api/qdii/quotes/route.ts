@@ -39,6 +39,18 @@ type EastmoneyMobileFundInfo = {
   } | null;
 };
 
+type FundApplyStatus = {
+  subscriptionStatus: string | null;
+  redemptionStatus: string | null;
+  subscriptionOpen: boolean | null;
+  subscriptionDate: string | null;
+  subscriptionMinAmount: string | null;
+  dailySubscriptionLimit: string | null;
+  subscriptionSource: string;
+  subscriptionSourceUrl: string;
+  subscriptionNote: string | null;
+};
+
 const timeoutMs = 8000;
 const execFileAsync = promisify(execFile);
 
@@ -135,6 +147,34 @@ async function fetchJson<T>(url: string, headers: Record<string, string>) {
   }
 }
 
+async function fetchText(url: string, headers: Record<string, string>) {
+  try {
+    const { controller, done } = withTimeout();
+    try {
+      const response = await fetch(url, {
+        cache: "no-store",
+        signal: controller.signal,
+        headers,
+      });
+      return await response.text();
+    } finally {
+      done();
+    }
+  } catch {
+    const args = [
+      "-sS",
+      "--max-time",
+      String(Math.ceil(timeoutMs / 1000)),
+      url,
+      ...Object.entries(headers).flatMap(([key, value]) => ["-H", `${key}: ${value}`]),
+    ];
+    const { stdout } = await execFileAsync("/usr/bin/curl", args, {
+      maxBuffer: 1024 * 1024 * 8,
+    });
+    return stdout;
+  }
+}
+
 async function runLimited<T, R>(
   items: T[],
   limit: number,
@@ -154,6 +194,149 @@ async function runLimited<T, R>(
   );
 
   return results;
+}
+
+function cleanText(value: unknown) {
+  return String(value ?? "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#40;/g, "(")
+    .replace(/&#41;/g, ")")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripTrailingZeros(value: number) {
+  return value
+    .toFixed(value >= 100 ? 0 : 2)
+    .replace(/\.00$/, "")
+    .replace(/(\.\d)0$/, "$1");
+}
+
+function formatFundAmount(value: unknown) {
+  const amount = numberOrNull(value);
+  if (amount == null || amount < 0) return null;
+  if (amount >= 800000000) return "无限额";
+  if (amount < 10000) return `${stripTrailingZeros(amount)}元`;
+  if (amount < 100000000) return `${stripTrailingZeros(amount / 10000)}万`;
+  return `${stripTrailingZeros(amount / 100000000)}亿`;
+}
+
+function normalizeSubscriptionOpen(status: string | null) {
+  if (!status) return null;
+  if (/开放申购|限大额/.test(status)) return true;
+  if (/暂停|停止|封闭|终止|发行失败|不支持/.test(status)) return false;
+  return null;
+}
+
+function subscriptionLimitNote(status: string | null, hasTradeRule: boolean) {
+  if (hasTradeRule) return null;
+  if (status === "场内交易") return "仅披露场内交易，未披露申购额度";
+  if (status && /暂停|停止|封闭|终止/.test(status)) return "当前未披露申购额度";
+  return "东财暂未披露申购额度";
+}
+
+function parseApplyStatusRows(text: string, codes: string[]) {
+  const match = text.match(/datas:(\[[\s\S]*?\]),record:/);
+  if (!match) return new Map<string, FundApplyStatus>();
+
+  const codeSet = new Set(codes);
+  const rows = JSON.parse(match[1]) as unknown[][];
+  const statuses = new Map<string, FundApplyStatus>();
+
+  for (const row of rows) {
+    const code = cleanText(row[0]);
+    if (!codeSet.has(code)) continue;
+
+    const subscriptionStatus = cleanText(row[5]) || null;
+    const redemptionStatus = cleanText(row[6]) || null;
+    const subscriptionDate = cleanText(row[4]) || null;
+    const tradeRuleCode = cleanText(row[11]);
+    const hasTradeRule = tradeRuleCode.length > 0;
+
+    statuses.set(code, {
+      subscriptionStatus,
+      redemptionStatus,
+      subscriptionOpen: normalizeSubscriptionOpen(subscriptionStatus),
+      subscriptionDate,
+      subscriptionMinAmount: hasTradeRule ? formatFundAmount(row[8]) : null,
+      dailySubscriptionLimit: hasTradeRule ? formatFundAmount(row[9]) : null,
+      subscriptionSource: "东方财富申购状态",
+      subscriptionSourceUrl: "https://fund.eastmoney.com/Fund_sgzt_bzdm.html",
+      subscriptionNote: subscriptionLimitNote(subscriptionStatus, hasTradeRule),
+    });
+  }
+
+  return statuses;
+}
+
+function extractCellAfterLabel(html: string, label: string) {
+  const match = html.match(
+    new RegExp(`<td[^>]*>\\s*${label}\\s*<\\/td>\\s*<td[^>]*>([\\s\\S]*?)<\\/td>`, "i"),
+  );
+  return match ? cleanText(match[1]) || null : null;
+}
+
+function parseF10TradingStatus(code: string, html: string): FundApplyStatus {
+  const tradingStatus = cleanText(html.match(/交易状态：\s*<span[^>]*>([\s\S]*?)<\/span>/)?.[1]);
+  const subscriptionStatus =
+    extractCellAfterLabel(html, "申购状态") ?? (tradingStatus.length > 0 ? tradingStatus : null);
+
+  return {
+    subscriptionStatus,
+    redemptionStatus: extractCellAfterLabel(html, "赎回状态"),
+    subscriptionOpen: normalizeSubscriptionOpen(subscriptionStatus),
+    subscriptionDate: null,
+    subscriptionMinAmount: null,
+    dailySubscriptionLimit: null,
+    subscriptionSource: "东方财富基金 F10",
+    subscriptionSourceUrl: `https://fundf10.eastmoney.com/jjfl_${code}.html`,
+    subscriptionNote: "F10 未披露单日申购额度",
+  };
+}
+
+async function fetchF10TradingStatus(code: string) {
+  try {
+    const html = await fetchText(`https://fundf10.eastmoney.com/jjfl_${code}.html`, {
+      Referer: "https://fundf10.eastmoney.com/",
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    });
+    return [code, parseF10TradingStatus(code, html)] as const;
+  } catch {
+    return [code, null] as const;
+  }
+}
+
+async function fetchFundApplyStatuses(codes: string[]) {
+  try {
+    const params = [
+      "t=8",
+      "page=1,50000",
+      "js=reData",
+      "sort=fcode,asc",
+    ].join("&");
+    const text = await fetchText(`https://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx?${params}`, {
+      Referer: "https://fund.eastmoney.com/Fund_sgzt_bzdm.html",
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    });
+    const statuses = parseApplyStatusRows(text, codes);
+    const missingCodes = codes.filter((code) => !statuses.has(code));
+
+    if (missingCodes.length > 0) {
+      const fallbackStatuses = await runLimited(missingCodes, 6, fetchF10TradingStatus);
+      for (const [code, status] of fallbackStatuses) {
+        if (status) statuses.set(code, status);
+      }
+    }
+
+    return statuses;
+  } catch {
+    const fallbackStatuses = await runLimited(codes, 6, fetchF10TradingStatus);
+    return new Map(fallbackStatuses.filter((entry): entry is readonly [string, FundApplyStatus] => entry[1] != null));
+  }
 }
 
 async function fetchMarketQuotes(codes: string[]) {
@@ -363,12 +546,13 @@ async function fetchEastmoneyMobileEstimate(code: string) {
 export async function GET() {
   const codes = [...new Set(qdiiGroups.flatMap((group) => group.items.map((item) => item.code)))];
   const marketQuotes = await fetchMarketQuotes(codes);
-  const [tencentQuotes, sinaQuotes, dailyQuotes, mobileEstimates, estimates] = await Promise.all([
+  const [tencentQuotes, sinaQuotes, dailyQuotes, mobileEstimates, estimates, applyStatuses] = await Promise.all([
     fetchTencentQuotes(codes),
     fetchSinaQuotes(codes),
     runLimited(codes, 8, async (code) => [code, await fetchDailyQuote(code)] as const),
     runLimited(codes, 8, async (code) => [code, await fetchEastmoneyMobileEstimate(code)] as const),
     runLimited(codes, 8, async (code) => [code, await fetchFundEstimate(code)] as const),
+    fetchFundApplyStatuses(codes),
   ]);
   const dailyQuoteMap = new Map(dailyQuotes);
   const mobileEstimateMap = new Map(mobileEstimates);
@@ -423,6 +607,7 @@ export async function GET() {
             : "无数据";
     const premiumRate =
       tencentQuote?.premiumRate ?? (price != null && nav && nav > 0 ? (price / nav - 1) * 100 : null);
+    const applyStatus = applyStatuses.get(code);
 
     quotes[code] = {
       code,
@@ -437,6 +622,15 @@ export async function GET() {
       navSource,
       premiumRate,
       sourceName: tencentQuote?.sourceName ?? "东方财富行情 / 东方财富移动端估值",
+      subscriptionStatus: applyStatus?.subscriptionStatus ?? null,
+      redemptionStatus: applyStatus?.redemptionStatus ?? null,
+      subscriptionOpen: applyStatus?.subscriptionOpen ?? null,
+      subscriptionDate: applyStatus?.subscriptionDate ?? null,
+      subscriptionMinAmount: applyStatus?.subscriptionMinAmount ?? null,
+      dailySubscriptionLimit: applyStatus?.dailySubscriptionLimit ?? null,
+      subscriptionSource: applyStatus?.subscriptionSource ?? null,
+      subscriptionSourceUrl: applyStatus?.subscriptionSourceUrl ?? null,
+      subscriptionNote: applyStatus?.subscriptionNote ?? null,
       updatedAt,
       status: price != null && nav != null ? "ok" : price != null || nav != null ? "partial" : "missing",
     };

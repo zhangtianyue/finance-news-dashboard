@@ -60,6 +60,15 @@ export type QdiiEtfQuote = {
   navSource: string;
   premiumRate: number | null;
   sourceName: string;
+  subscriptionStatus: string | null;
+  redemptionStatus: string | null;
+  subscriptionOpen: boolean | null;
+  subscriptionDate: string | null;
+  subscriptionMinAmount: string | null;
+  dailySubscriptionLimit: string | null;
+  subscriptionSource: string | null;
+  subscriptionSourceUrl: string | null;
+  subscriptionNote: string | null;
   updatedAt: string;
   status: "ok" | "partial" | "missing";
 };
