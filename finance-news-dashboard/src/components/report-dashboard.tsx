@@ -289,6 +289,11 @@ function subscriptionStatusClass(status: string | null | undefined) {
   return "border-slate-200 bg-slate-50 text-slate-600";
 }
 
+function shortTradeStatus(status: string | null | undefined) {
+  if (!status) return "N/A";
+  return status.replace("场内交易", "场内");
+}
+
 function QdiiEtfGroups({
   groups,
   quotes,
@@ -350,16 +355,15 @@ function QdiiEtfGroups({
               <table className="min-w-[1120px] w-full border-collapse text-left text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
-                    <th className="px-3 py-2 font-semibold">代码</th>
-                    <th className="px-3 py-2 font-semibold">名称</th>
-                    <th className="px-3 py-2 text-right font-semibold">现价/日期</th>
-                    <th className="px-3 py-2 text-right font-semibold">涨跌幅</th>
-                    <th className="px-3 py-2 text-right font-semibold">实时估值/时间</th>
-                    <th className="px-3 py-2 text-right font-semibold">溢价率</th>
-                    <th className="px-3 py-2 font-semibold">申购状态</th>
-                    <th className="px-3 py-2 text-right font-semibold">每日申购额度</th>
-                    <th className="px-3 py-2 text-right font-semibold">成交额</th>
-                    <th className="px-3 py-2 font-semibold">跟踪</th>
+                    <th className="w-[88px] px-3 py-2 font-semibold">代码</th>
+                    <th className="w-[170px] px-3 py-2 font-semibold">名称</th>
+                    <th className="w-[150px] px-3 py-2 text-right font-semibold">现价/日期</th>
+                    <th className="w-[92px] px-3 py-2 text-right font-semibold">涨跌幅</th>
+                    <th className="w-[175px] px-3 py-2 text-right font-semibold">实时估值/时间</th>
+                    <th className="w-[98px] px-3 py-2 text-right font-semibold">溢价率</th>
+                    <th className="w-[190px] px-3 py-2 font-semibold">申购/额度</th>
+                    <th className="w-[96px] px-3 py-2 text-right font-semibold">成交额</th>
+                    <th className="min-w-[230px] px-3 py-2 font-semibold">跟踪</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -370,8 +374,10 @@ function QdiiEtfGroups({
                         <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-slate-950">
                           {item.code}
                         </td>
-                        <td className="px-3 py-3">
-                          <div className="font-medium text-slate-950">{item.name}</div>
+                        <td className="min-w-[150px] px-3 py-3">
+                          <div className="whitespace-nowrap font-medium text-slate-950">
+                            {item.name}
+                          </div>
                           <div className="mt-1 text-xs text-slate-500">{item.manager}</div>
                         </td>
                         <td
@@ -415,50 +421,49 @@ function QdiiEtfGroups({
                         >
                           {formatMetric(quote?.premiumRate ?? null, "%")}
                         </td>
-                        <td className="px-3 py-3">
-                          <span
-                            className={`inline-flex rounded border px-2 py-1 text-xs font-semibold ${subscriptionStatusClass(
-                              quote?.subscriptionStatus,
-                            )}`}
-                          >
-                            {quote?.subscriptionStatus ?? "待更新"}
-                          </span>
-                          {quote?.redemptionStatus ? (
-                            <div className="mt-1 text-xs text-slate-500">
-                              赎回 {quote.redemptionStatus}
+                        <td
+                          className="px-3 py-3"
+                          title={quote?.subscriptionNote ?? quote?.subscriptionSource ?? undefined}
+                        >
+                          <div className="min-w-[168px] space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs font-semibold ${subscriptionStatusClass(
+                                  quote?.subscriptionStatus,
+                                )}`}
+                              >
+                                {quote?.subscriptionStatus ?? "待更新"}
+                              </span>
+                              {quote?.subscriptionSourceUrl ? (
+                                <a
+                                  href={quote.subscriptionSourceUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[11px] text-slate-500 hover:text-slate-950"
+                                  title={quote.subscriptionSource ?? "查看申购状态来源"}
+                                >
+                                  {quote.subscriptionDate ?? "东财"}
+                                  <ArrowUpRight className="size-3" />
+                                </a>
+                              ) : null}
                             </div>
-                          ) : null}
-                          {quote?.subscriptionDate ? (
-                            <div className="mt-1 font-mono text-[11px] text-slate-500">
-                              东财 {quote.subscriptionDate}
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="whitespace-nowrap text-slate-500">日额度</span>
+                              <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
+                                {quote?.dailySubscriptionLimit ?? "暂无披露"}
+                              </span>
                             </div>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-3 text-right">
-                          <div className="font-mono text-slate-950">
-                            {quote?.dailySubscriptionLimit ?? "暂无披露"}
+                            <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                              <span className="whitespace-nowrap">
+                                赎回 {shortTradeStatus(quote?.redemptionStatus)}
+                              </span>
+                              {quote?.subscriptionMinAmount ? (
+                                <span className="whitespace-nowrap">
+                                  起点 {quote.subscriptionMinAmount}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
-                          {quote?.subscriptionMinAmount ? (
-                            <div className="mt-1 text-xs text-slate-500">
-                              起点 {quote.subscriptionMinAmount}
-                            </div>
-                          ) : null}
-                          {quote?.subscriptionNote ? (
-                            <div className="mt-1 text-xs leading-5 text-slate-500">
-                              {quote.subscriptionNote}
-                            </div>
-                          ) : null}
-                          {quote?.subscriptionSourceUrl ? (
-                            <a
-                              href={quote.subscriptionSourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="mt-1 inline-flex items-center justify-end gap-1 text-xs text-slate-500 hover:text-slate-950"
-                            >
-                              {quote.subscriptionSource}
-                              <ArrowUpRight className="size-3" />
-                            </a>
-                          ) : null}
                         </td>
                         <td className="px-3 py-3 text-right font-mono text-slate-700">
                           {formatAmount(quote?.amount)}
