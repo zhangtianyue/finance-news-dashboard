@@ -42,6 +42,15 @@ const reportDir = path.join(process.cwd(), "data", "reports");
 const latestReportPath = path.join(reportDir, "latest.json");
 const fetchTimeoutMs = 8000;
 
+async function persistLatestReport(report: MorningReport) {
+  try {
+    await fs.mkdir(reportDir, { recursive: true });
+    await fs.writeFile(latestReportPath, JSON.stringify(report, null, 2));
+  } catch (error) {
+    console.warn("Morning report cache write skipped", error);
+  }
+}
+
 function shanghaiDateTime(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",
@@ -251,8 +260,7 @@ export async function generateMorningReport(): Promise<MorningReport> {
   }
 
   const report = buildReport(sources);
-  await fs.mkdir(reportDir, { recursive: true });
-  await fs.writeFile(latestReportPath, JSON.stringify(report, null, 2));
+  await persistLatestReport(report);
   return report;
 }
 

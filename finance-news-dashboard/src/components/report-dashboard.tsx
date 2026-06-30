@@ -8,6 +8,7 @@ import {
   Clock3,
   FileText,
   Globe2,
+  PiggyBank,
   RefreshCw,
   Rss,
   Sparkles,
@@ -21,12 +22,16 @@ import type {
   QdiiEtfQuote,
   QdiiEtfGroup,
 } from "@/lib/global-valuations";
-import { ashareDividendRankingLimit } from "@/lib/a-share-dividend-config";
+import {
+  ashareDividendContinuityYears,
+  ashareDividendMinimumYield,
+} from "@/lib/a-share-dividend-config";
 import type { AshareDividendSnapshot } from "@/lib/a-share-dividends";
+import { DcaBacktestPanel } from "@/components/dca-backtest-panel";
 import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
-type DashboardView = "report" | "valuation" | "qdii" | "dividends";
+type DashboardView = "report" | "valuation" | "qdii" | "dividends" | "dca";
 
 function sourceLabel(source: SourceId) {
   return {
@@ -434,7 +439,7 @@ function AshareDividendTable({
     rows.length > 0
       ? rows.reduce((sum, row) => sum + (row.dividendYield ?? 0), 0) / rows.length
       : null;
-  const implementedCount = rows.filter((row) => row.progress === "实施分配").length;
+  const multiDividendCount = rows.filter((row) => row.dividendEvents > 1).length;
 
   return (
     <section>
@@ -445,11 +450,13 @@ function AshareDividendTable({
             A 股股息率排行
           </div>
           <h2 className="text-xl font-semibold text-slate-950">
-            股息率 Top{ashareDividendRankingLimit} 公司
+            连续{ashareDividendContinuityYears}年分红且股息率高于
+            {ashareDividendMinimumYield}%
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            数据来自东方财富分红送配，按最近一个有足够有效样本的报告期排序；股息率为页面披露的
-            DIVIDENT_RATIO 口径。
+            数据来自东方财富分红送配，先筛选最近 {ashareDividendContinuityYears}{" "}
+            个完整年度每年都有现金分红的公司，再按最近完整年度现金分红合计 / 当前行情价动态计算，展示股息率高于
+            {ashareDividendMinimumYield}% 的全部公司。
           </p>
         </div>
         <div className="font-mono text-xs text-slate-500">
@@ -466,26 +473,31 @@ function AshareDividendTable({
 
       <div className="mb-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-medium text-slate-500">有效样本</div>
+          <div className="text-xs font-medium text-slate-500">
+            连续{ashareDividendContinuityYears}年且 &gt;{ashareDividendMinimumYield}%
+          </div>
           <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
             {rows.length}
+          </div>
+          <div className="mt-1 text-xs text-slate-500">
+            按动态股息率展示
           </div>
         </div>
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-medium text-slate-500">
-            Top{ashareDividendRankingLimit} 平均股息率
+            展示样本平均股息率
           </div>
           <div className="mt-2 font-mono text-3xl font-semibold text-red-700">
             {formatStrictPercent(averageYield)}
           </div>
         </div>
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="text-xs font-medium text-slate-500">已实施分配</div>
+          <div className="text-xs font-medium text-slate-500">年内多次分红</div>
           <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
-            {implementedCount}
+            {multiDividendCount}
           </div>
           <div className="mt-1 text-xs text-slate-500">
-            其余可能仍处于董事会或股东大会阶段
+            已把中期、年度等多次现金分红合并计算
           </div>
         </div>
       </div>
@@ -499,7 +511,7 @@ function AshareDividendTable({
               <th className="px-3 py-2 text-right font-semibold">现价</th>
               <th className="px-3 py-2 text-right font-semibold">涨跌幅</th>
               <th className="px-3 py-2 text-right font-semibold">股息率</th>
-              <th className="px-3 py-2 text-right font-semibold">现金分红</th>
+              <th className="px-3 py-2 text-right font-semibold">年度现金分红</th>
               <th className="px-3 py-2 font-semibold">进度</th>
               <th className="px-3 py-2 font-semibold">登记/除息</th>
               <th className="px-3 py-2 font-semibold">行业</th>
@@ -537,7 +549,8 @@ function AshareDividendTable({
                     {formatStrictPercent(row.dividendYield)}
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-slate-950">
-                    {formatBonus(row.pretaxBonusRmb)}
+                    <div>{formatBonus(row.annualBonusRmb)}</div>
+                    <div className="mt-1 text-xs text-slate-500">{row.dividendEvents}次分红</div>
                   </td>
                   <td className="px-3 py-3">
                     <span className="inline-flex rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-700">
@@ -664,7 +677,7 @@ export function ReportDashboard({
 
   async function refreshDividendStocks() {
     setIsDividendLoading(true);
-    setDividendMessage(`正在更新 A 股股息率 Top${ashareDividendRankingLimit}...`);
+    setDividendMessage(`正在更新 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司...`);
 
     try {
       const response = await fetch("/api/a-share/dividends", {
@@ -721,7 +734,9 @@ export function ReportDashboard({
       ? report.generatedAtLabel
       : activeView === "dividends"
         ? dividendSnapshot?.updatedAtLabel ?? "待更新"
-        : valuations.asOfLabel;
+        : activeView === "dca"
+          ? "按需运行"
+          : valuations.asOfLabel;
 
   const activeTitle =
     activeView === "report"
@@ -730,7 +745,9 @@ export function ReportDashboard({
         ? "全球指数估值雷达"
         : activeView === "qdii"
           ? "大陆上市 QDII ETF"
-          : `A 股股息率 Top${ashareDividendRankingLimit}`;
+          : activeView === "dividends"
+            ? `A 股股息率 > ${ashareDividendMinimumYield}%`
+            : "定投回测器";
 
   return (
     <main className="min-h-screen bg-[#eef2f5] text-slate-950">
@@ -786,10 +803,23 @@ export function ReportDashboard({
                       ? "bg-slate-900 text-white shadow-sm"
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
                   }`}
-                  title={`查看 A 股股息率前 ${ashareDividendRankingLimit} 名公司`}
+                  title={`查看 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`}
                 >
                   <BadgePercent className="size-3.5" />
                   A股股息
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveView("dca")}
+                  className={`inline-flex h-8 items-center gap-2 rounded px-3 text-xs font-semibold transition-colors ${
+                    activeView === "dca"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-white hover:text-slate-950"
+                  }`}
+                  title="查看定投回测器"
+                >
+                  <PiggyBank className="size-3.5" />
+                  定投回测
                 </button>
               </div>
               <span className="inline-flex items-center gap-2 rounded border border-slate-200 px-3 py-1.5 font-mono text-xs text-slate-600">
@@ -830,7 +860,7 @@ export function ReportDashboard({
               onClick={refreshDividendStocks}
               disabled={isDividendLoading}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              title={`重新拉取 A 股股息率前 ${ashareDividendRankingLimit} 名公司`}
+              title={`重新拉取 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`}
             >
               <RefreshCw className={`size-4 ${isDividendLoading ? "animate-spin" : ""}`} />
               {isDividendLoading ? "更新中" : "刷新股息"}
@@ -946,12 +976,14 @@ export function ReportDashboard({
             isLoading={isQdiiLoading}
             message={qdiiMessage}
           />
-        ) : (
+        ) : activeView === "dividends" ? (
           <AshareDividendTable
             snapshot={dividendSnapshot}
             isLoading={isDividendLoading}
             message={dividendMessage}
           />
+        ) : (
+          <DcaBacktestPanel />
         )}
       </div>
     </main>

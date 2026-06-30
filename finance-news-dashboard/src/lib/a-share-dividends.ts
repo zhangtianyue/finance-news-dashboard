@@ -1,4 +1,7 @@
-import { ashareDividendRankingLimit } from "@/lib/a-share-dividend-config";
+import {
+  ashareDividendContinuityYears,
+  ashareDividendMinimumYield,
+} from "@/lib/a-share-dividend-config";
 
 export type AshareDividendCompany = {
   rank: number;
@@ -9,7 +12,8 @@ export type AshareDividendCompany = {
   price: number | null;
   changePct: number | null;
   dividendYield: number | null;
-  pretaxBonusRmb: number | null;
+  annualBonusRmb: number | null;
+  dividendEvents: number;
   progress: string | null;
   reportDate: string | null;
   planNoticeDate: string | null;
@@ -32,6 +36,9 @@ export type AshareDividendSnapshot = {
   sourceUrl: string;
   status: "ok" | "empty" | "error";
   message: string;
+  qualifiedCount: number;
+  continuityYears: number;
+  minimumYield: number;
   rows: AshareDividendCompany[];
 };
 
@@ -72,6 +79,7 @@ type EastmoneyDividendRow = {
 
 const eastmoneyEndpoint = "https://datacenter-web.eastmoney.com/api/data/v1/get";
 const timeoutMs = 8000;
+const dividendPageSize = 500;
 const sourceName = "东方财富分红送配";
 const sourceUrl = "https://data.eastmoney.com/yjfp/";
 
@@ -111,14 +119,9 @@ function shanghaiDateTimeLabel(date = new Date()) {
   }).format(date);
 }
 
-function reportLabel(value: string | null) {
-  if (!value) return "未确认报告期";
-  const [year, month] = value.split("-");
-  if (month === "12") return `${year}年年报`;
-  if (month === "06") return `${year}年中报`;
-  if (month === "03") return `${year}年一季报`;
-  if (month === "09") return `${year}年三季报`;
-  return value;
+function fiscalYearLabel(reportDate: string | null) {
+  if (!reportDate) return "未确认年度";
+  return `${reportDate.slice(0, 4)}完整年度`;
 }
 
 function exchangeName(code: string) {
@@ -170,7 +173,7 @@ async function fetchReportDates() {
     reportName: "RPT_DATE_SHAREBONUS_DET",
     columns: "ALL",
     pageNumber: 1,
-    pageSize: 12,
+    pageSize: 64,
     sortColumns: "REPORT_DATE",
     sortTypes: -1,
     source: "WEB",
@@ -184,47 +187,183 @@ async function fetchReportDates() {
 }
 
 async function fetchDividendRows(reportDate: string) {
-  const data = await fetchEastmoney<EastmoneyDividendRow>({
-    reportName: "RPT_SHAREBONUS_DET",
-    columns:
-      "SECURITY_CODE,SECURITY_NAME_ABBR,MARKET_TYPE,REPORT_DATE,PLAN_NOTICE_DATE,EQUITY_RECORD_DATE,EX_DIVIDEND_DATE,ASSIGN_PROGRESS,PRETAX_BONUS_RMB,DIVIDENT_RATIO,BASIC_EPS,BVPS,PNP_YOY_RATIO,TOTAL_SHARES",
-    quoteColumns: "f2,f3,f12,f14,f100",
-    pageNumber: 1,
-    pageSize: ashareDividendRankingLimit,
-    sortColumns: "DIVIDENT_RATIO,SECURITY_CODE",
-    sortTypes: "-1,1",
-    filter: `(REPORT_DATE='${reportDate}')(DIVIDENT_RATIO>0)`,
-    source: "WEB",
-    client: "WEB",
-  });
+  const fetchPage = (pageNumber: number) =>
+    fetchEastmoney<EastmoneyDividendRow>({
+      reportName: "RPT_SHAREBONUS_DET",
+      columns:
+        "SECURITY_CODE,SECURITY_NAME_ABBR,MARKET_TYPE,REPORT_DATE,PLAN_NOTICE_DATE,EQUITY_RECORD_DATE,EX_DIVIDEND_DATE,ASSIGN_PROGRESS,PRETAX_BONUS_RMB,DIVIDENT_RATIO,BASIC_EPS,BVPS,PNP_YOY_RATIO,TOTAL_SHARES",
+      quoteColumns: "f2,f3,f12,f14,f100",
+      pageNumber,
+      pageSize: dividendPageSize,
+      sortColumns: "SECURITY_CODE",
+      sortTypes: "1",
+      filter: `(REPORT_DATE='${reportDate}')`,
+      source: "WEB",
+      client: "WEB",
+    });
 
-  return data.result?.data ?? [];
+  const firstPage = await fetchPage(1);
+  const rows = [...(firstPage.result?.data ?? [])];
+  const totalPages = firstPage.result?.pages ?? 1;
+
+  for (let pageNumber = 2; pageNumber <= totalPages; pageNumber += 1) {
+    const page = await fetchPage(pageNumber);
+    rows.push(...(page.result?.data ?? []));
+  }
+
+  return rows;
 }
 
-function mapDividendRow(row: EastmoneyDividendRow, rank: number): AshareDividendCompany {
-  const code = row.SECURITY_CODE ?? "";
-  const dividendRatio = numberOrNull(row.DIVIDENT_RATIO);
+function reportDatesForFiscalYear(reportDates: string[], annualReportDate: string) {
+  const fiscalYear = annualReportDate.slice(0, 4);
+  return reportDates.filter((value) => value.startsWith(`${fiscalYear}-`));
+}
+
+function recentFiscalYears(annualReportDate: string) {
+  const latestFiscalYear = Number(annualReportDate.slice(0, 4));
+  return Array.from({ length: ashareDividendContinuityYears }, (_, index) =>
+    String(latestFiscalYear - index),
+  );
+}
+
+function reportDatesForFiscalYears(reportDates: string[], fiscalYears: string[]) {
+  const fiscalYearSet = new Set(fiscalYears);
+  return reportDates.filter((value) => fiscalYearSet.has(value.slice(0, 4)));
+}
+
+type AggregatedDividendRow = {
+  code: string;
+  name: string;
+  industry: string | null;
+  price: number | null;
+  changePct: number | null;
+  annualBonusRmb: number;
+  dividendEvents: number;
+  latestRow: EastmoneyDividendRow;
+};
+
+type RankedDividendRow = AggregatedDividendRow & {
+  dividendYield: number;
+};
+
+function isLaterReportRow(candidate: EastmoneyDividendRow, current: EastmoneyDividendRow) {
+  const candidateDate = datePart(candidate.REPORT_DATE) ?? "";
+  const currentDate = datePart(current.REPORT_DATE) ?? "";
+  if (candidateDate !== currentDate) return candidateDate > currentDate;
+
+  const candidateNoticeDate = datePart(candidate.PLAN_NOTICE_DATE) ?? "";
+  const currentNoticeDate = datePart(current.PLAN_NOTICE_DATE) ?? "";
+  return candidateNoticeDate > currentNoticeDate;
+}
+
+function aggregateDividendRows(rows: EastmoneyDividendRow[]): RankedDividendRow[] {
+  const companies = new Map<string, AggregatedDividendRow>();
+
+  for (const row of rows) {
+    const code = row.SECURITY_CODE ?? "";
+    const pretaxBonusRmb = numberOrNull(row.PRETAX_BONUS_RMB);
+    if (!code || pretaxBonusRmb == null || pretaxBonusRmb <= 0) continue;
+
+    const price = numberOrNull(row.f2);
+    const changePct = numberOrNull(row.f3);
+    const existing = companies.get(code);
+
+    if (!existing) {
+      companies.set(code, {
+        code,
+        name: row.SECURITY_NAME_ABBR ?? code,
+        industry: row.f100 ?? null,
+        price,
+        changePct,
+        annualBonusRmb: pretaxBonusRmb,
+        dividendEvents: 1,
+        latestRow: row,
+      });
+      continue;
+    }
+
+    existing.annualBonusRmb += pretaxBonusRmb;
+    existing.dividendEvents += 1;
+
+    if (price != null && price > 0) {
+      existing.price = price;
+    }
+    if (changePct != null) {
+      existing.changePct = changePct;
+    }
+    if (row.f100) {
+      existing.industry = row.f100;
+    }
+    if (isLaterReportRow(row, existing.latestRow)) {
+      existing.latestRow = row;
+    }
+  }
+
+  return [...companies.values()]
+    .map((company) => {
+      const dividendYield =
+        company.price != null && company.price > 0
+          ? (company.annualBonusRmb / 10 / company.price) * 100
+          : null;
+      return { ...company, dividendYield };
+    })
+    .filter((company): company is RankedDividendRow => company.dividendYield != null)
+    .sort((a, b) => {
+      if (a.dividendYield !== b.dividendYield) {
+        return (b.dividendYield ?? 0) - (a.dividendYield ?? 0);
+      }
+      return a.code.localeCompare(b.code);
+    });
+}
+
+function continuousDividendCompanyCodes(rows: EastmoneyDividendRow[], fiscalYears: string[]) {
+  const requiredYears = new Set(fiscalYears);
+  const yearsByCompany = new Map<string, Set<string>>();
+
+  for (const row of rows) {
+    const code = row.SECURITY_CODE ?? "";
+    const reportDate = datePart(row.REPORT_DATE);
+    const fiscalYear = reportDate?.slice(0, 4);
+    const pretaxBonusRmb = numberOrNull(row.PRETAX_BONUS_RMB);
+    if (!code || !fiscalYear || !requiredYears.has(fiscalYear)) continue;
+    if (pretaxBonusRmb == null || pretaxBonusRmb <= 0) continue;
+
+    const years = yearsByCompany.get(code) ?? new Set<string>();
+    years.add(fiscalYear);
+    yearsByCompany.set(code, years);
+  }
+
+  return new Set(
+    [...yearsByCompany.entries()]
+      .filter(([, years]) => fiscalYears.every((fiscalYear) => years.has(fiscalYear)))
+      .map(([code]) => code),
+  );
+}
+
+function mapDividendRow(row: RankedDividendRow, rank: number): AshareDividendCompany {
+  const latestRow = row.latestRow;
   return {
     rank,
-    code,
-    name: row.SECURITY_NAME_ABBR ?? code,
-    exchange: exchangeName(code),
-    industry: row.f100 ?? null,
-    price: numberOrNull(row.f2),
-    changePct: numberOrNull(row.f3),
-    dividendYield: dividendRatio != null ? dividendRatio * 100 : null,
-    pretaxBonusRmb: numberOrNull(row.PRETAX_BONUS_RMB),
-    progress: row.ASSIGN_PROGRESS ?? null,
-    reportDate: datePart(row.REPORT_DATE),
-    planNoticeDate: datePart(row.PLAN_NOTICE_DATE),
-    equityRecordDate: datePart(row.EQUITY_RECORD_DATE),
-    exDividendDate: datePart(row.EX_DIVIDEND_DATE),
-    eps: numberOrNull(row.BASIC_EPS),
-    bvps: numberOrNull(row.BVPS),
-    profitGrowth: numberOrNull(row.PNP_YOY_RATIO),
-    totalShares: numberOrNull(row.TOTAL_SHARES),
-    quoteUrl: `https://quote.eastmoney.com/unify/r/${eastmoneyQuoteMarket(code)}.${code}`,
-    detailUrl: `${sourceUrl}detail/${code}.html`,
+    code: row.code,
+    name: row.name,
+    exchange: exchangeName(row.code),
+    industry: row.industry,
+    price: row.price,
+    changePct: row.changePct,
+    dividendYield: row.dividendYield,
+    annualBonusRmb: row.annualBonusRmb,
+    dividendEvents: row.dividendEvents,
+    progress: latestRow.ASSIGN_PROGRESS ?? null,
+    reportDate: datePart(latestRow.REPORT_DATE),
+    planNoticeDate: datePart(latestRow.PLAN_NOTICE_DATE),
+    equityRecordDate: datePart(latestRow.EQUITY_RECORD_DATE),
+    exDividendDate: datePart(latestRow.EX_DIVIDEND_DATE),
+    eps: numberOrNull(latestRow.BASIC_EPS),
+    bvps: numberOrNull(latestRow.BVPS),
+    profitGrowth: numberOrNull(latestRow.PNP_YOY_RATIO),
+    totalShares: numberOrNull(latestRow.TOTAL_SHARES),
+    quoteUrl: `https://quote.eastmoney.com/unify/r/${eastmoneyQuoteMarket(row.code)}.${row.code}`,
+    detailUrl: `${sourceUrl}detail/${row.code}.html`,
   };
 }
 
@@ -239,31 +378,59 @@ export function createEmptyAshareDividendSnapshot(message = "尚未获取到 A �
     sourceUrl,
     status: "empty",
     message,
+    qualifiedCount: 0,
+    continuityYears: ashareDividendContinuityYears,
+    minimumYield: ashareDividendMinimumYield,
     rows: [],
   } satisfies AshareDividendSnapshot;
 }
 
 export async function fetchAshareDividendSnapshot(): Promise<AshareDividendSnapshot> {
   const reportDates = await fetchReportDates();
+  const annualReportDates = reportDates.filter((value) => value.endsWith("-12-31"));
 
-  for (const reportDate of reportDates) {
-    const rows = await fetchDividendRows(reportDate);
-    const mappedRows = rows.map((row, index) => mapDividendRow(row, index + 1));
-    if (mappedRows.length >= ashareDividendRankingLimit) {
+  for (const reportDate of annualReportDates) {
+    const fiscalYears = recentFiscalYears(reportDate);
+    const requiredReportDates = reportDatesForFiscalYears(reportDates, fiscalYears);
+    const dividendRows = (
+      await Promise.all(
+        requiredReportDates.map((value) => fetchDividendRows(value)),
+      )
+    ).flat();
+
+    const continuousCodes = continuousDividendCompanyCodes(dividendRows, fiscalYears);
+    const currentFiscalYearReportDates = new Set(reportDatesForFiscalYear(reportDates, reportDate));
+    const currentFiscalYearRows = dividendRows.filter((row) =>
+      currentFiscalYearReportDates.has(datePart(row.REPORT_DATE) ?? ""),
+    );
+    const qualifiedRows = aggregateDividendRows(currentFiscalYearRows).filter((row) =>
+      continuousCodes.has(row.code),
+    );
+    const displayRows = qualifiedRows.filter(
+      (row) => row.dividendYield > ashareDividendMinimumYield,
+    );
+    const mappedRows = displayRows
+      .map((row, index) => mapDividendRow(row, index + 1));
+    if (mappedRows.length > 0) {
       const now = new Date();
       return {
         updatedAt: now.toISOString(),
         updatedAtLabel: shanghaiDateTimeLabel(now),
         reportDate,
-        reportLabel: reportLabel(reportDate),
+        reportLabel: fiscalYearLabel(reportDate),
         sourceName,
         sourceUrl,
         status: "ok",
-        message: `已按 ${reportLabel(reportDate)} 股息率倒序取前 ${ashareDividendRankingLimit} 名。`,
+        message: `已按最近 ${ashareDividendContinuityYears} 个完整年度连续现金分红筛选，并用 ${fiscalYearLabel(reportDate)}现金分红合计 / 当前价格计算，展示股息率高于 ${ashareDividendMinimumYield}% 的 ${displayRows.length} 家。`,
+        qualifiedCount: qualifiedRows.length,
+        continuityYears: ashareDividendContinuityYears,
+        minimumYield: ashareDividendMinimumYield,
         rows: mappedRows,
       };
     }
   }
 
-  return createEmptyAshareDividendSnapshot("最近报告期没有足够的有效股息率数据。");
+  return createEmptyAshareDividendSnapshot(
+    `最近 ${ashareDividendContinuityYears} 个完整年度连续现金分红公司中，没有找到动态股息率高于 ${ashareDividendMinimumYield}% 的公司。`,
+  );
 }

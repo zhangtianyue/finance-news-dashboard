@@ -1,1 +1,2 @@
-export const ashareDividendRankingLimit = 50;
+export const ashareDividendContinuityYears = 10;
+export const ashareDividendMinimumYield = 5;

@@ -9,7 +9,7 @@ const primaryCode = "513500";
 const alternateCode = "159612";
 const statePath = resolve("data/runtime/qdii-sp500-rotation-state.json");
 const switchToAlternateThreshold = -2.0;
-const switchBackThreshold = -0.2;
+const switchBackThreshold = -0.5;
 const validTargets = new Set([primaryCode, alternateCode]);
 const tencentUrl = "https://qt.gtimg.cn/q=sh513500,sz159612";
 
@@ -187,7 +187,7 @@ function quoteDataIssue(quotes, today) {
 function decideTarget(currentTarget, spread) {
   // 状态机的核心：
   // - 从 513500 切到 159612，需要 159612 至少便宜 2 个百分点。
-  // - 从 159612 切回 513500，只要优势缩小到 0.20 个百分点以内。
+  // - 从 159612 切回 513500，只要优势缩小到 0.50 个百分点以内。
   // 这形成了滞回区间，避免在 -2% 附近频繁来回切。
   if (currentTarget === primaryCode && spread <= switchToAlternateThreshold) {
     return {
@@ -201,7 +201,7 @@ function decideTarget(currentTarget, spread) {
   if (currentTarget === alternateCode && spread >= switchBackThreshold) {
     return {
       target: primaryCode,
-      reason: `${alternateCode} premium advantage is within 0.20 percentage points; switch back to ${primaryCode}`,
+      reason: `${alternateCode} premium advantage is within 0.50 percentage points; switch back to ${primaryCode}`,
     };
   }
 
@@ -363,7 +363,7 @@ function quoteFixture(premium500, premium159612, time = "2026-06-16 10:15") {
 function runSelfTest() {
   // 这些断言覆盖策略最容易出错的阈值边界：
   // -2.00 必须切，-1.99 不能切；
-  // -0.20 必须切回，-0.30 继续持有 159612。
+  // -0.50 必须切回，-0.60 继续持有 159612。
   const tradingTime = new Date("2026-06-16T02:15:00.000Z");
 
   assert.equal(
@@ -385,7 +385,7 @@ function runSelfTest() {
   assert.equal(
     buildDecision({
       currentTarget: alternateCode,
-      quotes: quoteFixture(7, 6.8),
+      quotes: quoteFixture(7, 6.5),
       now: tradingTime,
     }).target,
     primaryCode,
@@ -393,7 +393,7 @@ function runSelfTest() {
   assert.equal(
     buildDecision({
       currentTarget: alternateCode,
-      quotes: quoteFixture(7, 6.7),
+      quotes: quoteFixture(7, 6.4),
       now: tradingTime,
     }).target,
     alternateCode,
