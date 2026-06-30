@@ -512,12 +512,12 @@ function DatePartsSelect({
   }
 
   return (
-    <div className="grid grid-cols-[1.25fr_0.85fr_0.85fr] gap-1.5">
+    <div className="grid min-w-0 grid-cols-[1.2fr_0.9fr_0.9fr] gap-1.5">
       <select
         aria-label="选择年份"
         value={year}
         onChange={(event) => updateDate({ year: Number(event.target.value) })}
-        className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+        className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
       >
         {years.map((value) => (
           <option key={value} value={value}>
@@ -529,7 +529,7 @@ function DatePartsSelect({
         aria-label="选择月份"
         value={month}
         onChange={(event) => updateDate({ month: Number(event.target.value) })}
-        className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+        className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
       >
         {Array.from({ length: 12 }, (_, index) => index + 1).map((value) => (
           <option key={value} value={value}>
@@ -541,7 +541,7 @@ function DatePartsSelect({
         aria-label="选择日期"
         value={Math.min(day, dayCount)}
         onChange={(event) => updateDate({ day: Number(event.target.value) })}
-        className="h-9 rounded-md border border-slate-300 bg-white px-2 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+        className="h-9 min-w-0 rounded-md border border-slate-300 bg-white px-2 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
       >
         {Array.from({ length: dayCount }, (_, index) => index + 1).map((value) => (
           <option key={value} value={value}>
@@ -686,17 +686,17 @@ export function DcaBacktestPanel() {
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)] 2xl:grid-cols-[440px_minmax(0,1fr)]">
         <form
           onSubmit={handleRun}
           className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm"
         >
           <div className="border-b border-slate-200 bg-slate-950 px-4 py-4 text-white">
             <div className="text-xs font-semibold text-slate-300">DCA CONTROL</div>
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <div>
+            <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
+              <div className="min-w-0">
                 <div className="font-mono text-2xl font-semibold">{currentSymbol}</div>
-                <div className="mt-1 text-xs text-slate-400">{dateRangeLabel}</div>
+                <div className="mt-1 truncate text-xs text-slate-400">{dateRangeLabel}</div>
               </div>
               <button
                 type="submit"
@@ -725,7 +725,7 @@ export function DcaBacktestPanel() {
               />
             </FieldLabel>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3">
               <FieldLabel label="开始日期">
                 <DatePartsSelect value={startDate} onChange={setStartDate} />
               </FieldLabel>
