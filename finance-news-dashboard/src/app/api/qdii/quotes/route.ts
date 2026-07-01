@@ -45,6 +45,7 @@ type FundApplyStatus = {
   subscriptionOpen: boolean | null;
   subscriptionDate: string | null;
   subscriptionMinAmount: string | null;
+  dailySubscriptionCount: string | null;
   dailySubscriptionLimit: string | null;
   subscriptionSource: string;
   subscriptionSourceUrl: string;
@@ -223,6 +224,12 @@ function formatFundAmount(value: unknown) {
   return `${stripTrailingZeros(amount / 100000000)}亿`;
 }
 
+function formatSubscriptionCount(value: unknown) {
+  const count = numberOrNull(value);
+  if (count == null || count <= 0) return null;
+  return `${stripTrailingZeros(count)}笔`;
+}
+
 function normalizeSubscriptionOpen(status: string | null) {
   if (!status) return null;
   if (/开放申购|限大额/.test(status)) return true;
@@ -261,6 +268,7 @@ function parseApplyStatusRows(text: string, codes: string[]) {
       subscriptionOpen: normalizeSubscriptionOpen(subscriptionStatus),
       subscriptionDate,
       subscriptionMinAmount: hasTradeRule ? formatFundAmount(row[8]) : null,
+      dailySubscriptionCount: formatSubscriptionCount(row[10]),
       dailySubscriptionLimit: hasTradeRule ? formatFundAmount(row[9]) : null,
       subscriptionSource: "东方财富申购状态",
       subscriptionSourceUrl: "https://fund.eastmoney.com/Fund_sgzt_bzdm.html",
@@ -289,6 +297,7 @@ function parseF10TradingStatus(code: string, html: string): FundApplyStatus {
     subscriptionOpen: normalizeSubscriptionOpen(subscriptionStatus),
     subscriptionDate: null,
     subscriptionMinAmount: null,
+    dailySubscriptionCount: null,
     dailySubscriptionLimit: null,
     subscriptionSource: "东方财富基金 F10",
     subscriptionSourceUrl: `https://fundf10.eastmoney.com/jjfl_${code}.html`,
@@ -627,6 +636,7 @@ export async function GET() {
       subscriptionOpen: applyStatus?.subscriptionOpen ?? null,
       subscriptionDate: applyStatus?.subscriptionDate ?? null,
       subscriptionMinAmount: applyStatus?.subscriptionMinAmount ?? null,
+      dailySubscriptionCount: applyStatus?.dailySubscriptionCount ?? null,
       dailySubscriptionLimit: applyStatus?.dailySubscriptionLimit ?? null,
       subscriptionSource: applyStatus?.subscriptionSource ?? null,
       subscriptionSourceUrl: applyStatus?.subscriptionSourceUrl ?? null,

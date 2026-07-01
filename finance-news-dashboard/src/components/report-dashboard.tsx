@@ -331,7 +331,7 @@ function QdiiEtfGroups({
           </div>
           <h2 className="text-xl font-semibold text-slate-950">按跟踪类型分组</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            这些是 A 股场内可交易的跨境 ETF/QDII 代表产品。价格和涨跌幅来自东方财富，实时估值优先使用东方财富移动端口径；溢价率按场内现价相对实时估值计算。申购状态和每日申购额度来自东方财富申购状态页，未披露时显示暂无。
+            这些是 A 股场内可交易的跨境 ETF/QDII 代表产品。价格和涨跌幅来自东方财富，实时估值优先使用东方财富移动端口径；溢价率按场内现价相对实时估值计算。申购状态、日申购笔数和每日申购额度来自东方财富申购状态页或行情端，未披露时显示暂无。
           </p>
         </div>
         <div className="font-mono text-xs text-slate-500">
@@ -372,7 +372,7 @@ function QdiiEtfGroups({
                     <th className="w-[92px] px-3 py-2 text-right font-semibold">涨跌幅</th>
                     <th className="w-[175px] px-3 py-2 text-right font-semibold">实时估值/时间</th>
                     <th className="w-[98px] px-3 py-2 text-right font-semibold">溢价率</th>
-                    <th className="w-[190px] px-3 py-2 font-semibold">申购/额度</th>
+                    <th className="w-[190px] px-3 py-2 font-semibold">申购限制</th>
                     <th className="w-[96px] px-3 py-2 text-right font-semibold">成交额</th>
                     <th className="min-w-[230px] px-3 py-2 font-semibold">跟踪</th>
                   </tr>
@@ -457,6 +457,12 @@ function QdiiEtfGroups({
                                   <ArrowUpRight className="size-3" />
                                 </a>
                               ) : null}
+                            </div>
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="whitespace-nowrap text-slate-500">日笔数</span>
+                              <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
+                                {quote?.dailySubscriptionCount ?? "暂无披露"}
+                              </span>
                             </div>
                             <div className="flex items-center justify-between gap-3 text-xs">
                               <span className="whitespace-nowrap text-slate-500">日额度</span>

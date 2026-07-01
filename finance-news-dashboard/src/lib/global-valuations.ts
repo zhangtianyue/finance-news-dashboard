@@ -65,6 +65,7 @@ export type QdiiEtfQuote = {
   subscriptionOpen: boolean | null;
   subscriptionDate: string | null;
   subscriptionMinAmount: string | null;
+  dailySubscriptionCount: string | null;
   dailySubscriptionLimit: string | null;
   subscriptionSource: string | null;
   subscriptionSourceUrl: string | null;
