@@ -284,14 +284,25 @@ function subscriptionStatusClass(status: string | null | undefined) {
   if (!status) return "border-slate-200 bg-slate-50 text-slate-600";
   if (status.includes("开放")) return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status.includes("限")) return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status.includes("场内交易")) return "border-sky-200 bg-sky-50 text-sky-700";
+  if (status.includes("未披露")) return "border-slate-200 bg-slate-50 text-slate-600";
   if (/暂停|停止|封闭|终止/.test(status)) return "border-red-200 bg-red-50 text-red-700";
   return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+function displaySubscriptionStatus(status: string | null | undefined) {
+  if (!status) return "待更新";
+  if (status === "场内交易") return "申购未披露";
+  return status;
 }
 
 function shortTradeStatus(status: string | null | undefined) {
   if (!status) return "N/A";
   return status.replace("场内交易", "场内");
+}
+
+function secondaryMarketStatus(status: string | null | undefined) {
+  if (status === "场内交易") return "场内可交易";
+  return `赎回 ${shortTradeStatus(status)}`;
 }
 
 function QdiiEtfGroups({
@@ -429,10 +440,10 @@ function QdiiEtfGroups({
                             <div className="flex items-center gap-2">
                               <span
                                 className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs font-semibold ${subscriptionStatusClass(
-                                  quote?.subscriptionStatus,
+                                  displaySubscriptionStatus(quote?.subscriptionStatus),
                                 )}`}
                               >
-                                {quote?.subscriptionStatus ?? "待更新"}
+                                {displaySubscriptionStatus(quote?.subscriptionStatus)}
                               </span>
                               {quote?.subscriptionSourceUrl ? (
                                 <a
@@ -455,7 +466,7 @@ function QdiiEtfGroups({
                             </div>
                             <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
                               <span className="whitespace-nowrap">
-                                赎回 {shortTradeStatus(quote?.redemptionStatus)}
+                                {secondaryMarketStatus(quote?.redemptionStatus)}
                               </span>
                               {quote?.subscriptionMinAmount ? (
                                 <span className="whitespace-nowrap">
