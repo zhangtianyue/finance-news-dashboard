@@ -447,11 +447,6 @@ function QdiiEtfGroups({
                               {quote.navTime}
                             </div>
                           ) : null}
-                          {quote?.navSource ? (
-                            <div className="mt-1 whitespace-nowrap text-[11px] text-slate-500">
-                              {quote.navSource}
-                            </div>
-                          ) : null}
                         </td>
                         <td
                           className={`px-3 py-3 font-mono font-semibold ${metricClass(
