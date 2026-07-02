@@ -378,18 +378,18 @@ function QdiiEtfGroups({
             </div>
 
             <div className="overflow-x-auto rounded-md border border-slate-200">
-              <table className="w-full min-w-[1380px] table-fixed border-collapse text-left text-sm">
+              <table className="w-full min-w-[1260px] table-fixed border-collapse text-left text-sm">
                 <colgroup>
-                  <col className="w-[78px]" />
-                  <col className="w-[150px]" />
-                  <col className="w-[130px]" />
-                  <col className="w-[82px]" />
-                  <col className="w-[155px]" />
-                  <col className="w-[86px]" />
-                  <col className="w-[165px]" />
-                  <col className="w-[178px]" />
-                  <col className="w-[92px]" />
-                  <col className="w-[264px]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[14%]" />
+                  <col className="w-[8%]" />
+                  <col className="w-[11%]" />
                 </colgroup>
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
@@ -465,7 +465,7 @@ function QdiiEtfGroups({
                           title={quote?.shareSnapshotNote ?? quote?.shareChangeSource ?? undefined}
                         >
                           <div className="space-y-1.5 text-xs">
-                            <div className="flex items-center justify-between gap-2">
+                            <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2">
                               <span className="whitespace-nowrap text-slate-500">总份额</span>
                               <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
                                 {formatShares(quote?.totalShares)}
@@ -477,7 +477,7 @@ function QdiiEtfGroups({
                               </div>
                             ) : null}
                             <div
-                              className={`flex items-center justify-between gap-2 font-semibold ${metricClass(
+                              className={`grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 font-semibold ${metricClass(
                                 quote?.netShareChange,
                               )}`}
                             >
@@ -501,8 +501,8 @@ function QdiiEtfGroups({
                           className="px-3 py-3"
                           title={quote?.subscriptionNote ?? quote?.subscriptionSource ?? undefined}
                         >
-                          <div className="min-w-[168px] space-y-1.5">
-                            <div className="flex items-center gap-2">
+                          <div className="space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span
                                 className={`inline-flex whitespace-nowrap rounded border px-2 py-1 text-xs font-semibold ${subscriptionStatusClass(
                                   displaySubscriptionStatus(quote?.subscriptionStatus),
@@ -523,19 +523,19 @@ function QdiiEtfGroups({
                                 </a>
                               ) : null}
                             </div>
-                            <div className="flex items-center justify-between gap-3 text-xs">
+                            <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 text-xs">
                               <span className="whitespace-nowrap text-slate-500">日笔数</span>
                               <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
                                 {quote?.dailySubscriptionCount ?? "暂无披露"}
                               </span>
                             </div>
-                            <div className="flex items-center justify-between gap-3 text-xs">
+                            <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 text-xs">
                               <span className="whitespace-nowrap text-slate-500">日额度</span>
                               <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
                                 {quote?.dailySubscriptionLimit ?? "暂无披露"}
                               </span>
                             </div>
-                            <div className="flex items-center justify-between gap-3 text-xs text-slate-500">
+                            <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 text-xs text-slate-500">
                               <span className="whitespace-nowrap">
                                 {secondaryMarketStatus(quote?.redemptionStatus)}
                               </span>
