@@ -34,6 +34,11 @@ export type GlobalValuationSnapshot = {
   methodology: string;
   rows: IndexValuation[];
   qdiiGroups: QdiiEtfGroup[];
+  dataStatus?: "baseline" | "dynamic" | "cached";
+  dynamicFields?: number;
+  dynamicRows?: number;
+  message?: string;
+  updatedAt?: string;
 };
 
 export type QdiiEtf = {
@@ -989,5 +994,10 @@ export function createGlobalValuationSnapshot(): GlobalValuationSnapshot {
       valuationBand: band(row.peTtm),
     })),
     qdiiGroups,
+    dataStatus: "baseline",
+    dynamicFields: 0,
+    dynamicRows: 0,
+    message: "使用内置估值基准，动态源不可用时页面仍可正常打开。",
+    updatedAt: time.asOf,
   };
 }

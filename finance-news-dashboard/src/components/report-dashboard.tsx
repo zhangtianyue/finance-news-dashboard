@@ -139,7 +139,15 @@ function bandClass(band: IndexValuation["valuationBand"]) {
   return "bg-slate-50 text-slate-600 border-slate-200";
 }
 
-function ValuationTable({ snapshot }: { snapshot: GlobalValuationSnapshot }) {
+function ValuationTable({
+  snapshot,
+  isLoading,
+  message,
+}: {
+  snapshot: GlobalValuationSnapshot;
+  isLoading: boolean;
+  message: string | null;
+}) {
   const rows = snapshot.rows;
   const lowCount = rows.filter((row) => row.valuationBand === "低").length;
   const highCount = rows.filter(
@@ -163,8 +171,33 @@ function ValuationTable({ snapshot }: { snapshot: GlobalValuationSnapshot }) {
             {snapshot.methodology}
           </p>
         </div>
-        <div className="font-mono text-xs text-slate-500">{snapshot.asOfLabel}</div>
+        <div className="flex flex-col items-start gap-2 md:items-end">
+          <span
+            className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs font-semibold ${
+              snapshot.dataStatus === "dynamic"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : snapshot.dataStatus === "cached"
+                  ? "border-sky-200 bg-sky-50 text-sky-700"
+                  : "border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
+            {snapshot.dataStatus === "dynamic"
+              ? "动态更新"
+              : snapshot.dataStatus === "cached"
+                ? "缓存"
+                : "基准"}
+          </span>
+          <div className="font-mono text-xs text-slate-500">{snapshot.asOfLabel}</div>
+        </div>
       </div>
+
+      {message ?? snapshot.message ? (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <RefreshCw className={`size-4 text-emerald-600 ${isLoading ? "animate-spin" : ""}`} />
+          {message ?? snapshot.message}
+        </div>
+      ) : null}
 
       <div className="mb-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
@@ -735,8 +768,13 @@ export function ReportDashboard({
   initialValuations: GlobalValuationSnapshot;
 }) {
   const [report, setReport] = useState(initialReport);
-  const [valuations] = useState(initialValuations);
+  const [valuations, setValuations] = useState(initialValuations);
   const [activeView, setActiveView] = useState<DashboardView>("report");
+  const [hasRefreshedValuations, setHasRefreshedValuations] = useState(false);
+  const [isValuationLoading, setIsValuationLoading] = useState(false);
+  const [valuationMessage, setValuationMessage] = useState<string | null>(
+    initialValuations.message ?? null,
+  );
   const [qdiiQuotes, setQdiiQuotes] = useState<Record<string, QdiiEtfQuote>>({});
   const [isQdiiLoading, setIsQdiiLoading] = useState(false);
   const [qdiiMessage, setQdiiMessage] = useState<string | null>(null);
@@ -820,6 +858,29 @@ export function ReportDashboard({
     }
   }
 
+  async function refreshValuations(force = false) {
+    setIsValuationLoading(true);
+    setHasRefreshedValuations(true);
+    setValuationMessage("正在更新全球指数估值...");
+
+    try {
+      const response = await fetch(`/api/valuations/latest${force ? "?refresh=1" : ""}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`估值雷达更新失败：${response.status}`);
+      }
+      const data = (await response.json()) as GlobalValuationSnapshot;
+      setValuations(data);
+      setValuationMessage(data.message ?? "全球指数估值已更新");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "估值雷达更新失败";
+      setValuationMessage(`${message}，已保留当前估值表`);
+    } finally {
+      setIsValuationLoading(false);
+    }
+  }
+
   async function refreshDividendStocks() {
     setIsDividendLoading(true);
     setDividendMessage(`正在更新 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司...`);
@@ -849,6 +910,18 @@ export function ReportDashboard({
 
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (activeView !== "valuation" || hasRefreshedValuations || isValuationLoading) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void refreshValuations();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeView, hasRefreshedValuations, isValuationLoading]);
 
   useEffect(() => {
     if (activeView !== "qdii" || Object.keys(qdiiQuotes).length > 0 || isQdiiLoading) {
@@ -988,6 +1061,17 @@ export function ReportDashboard({
               <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
               {isRefreshing ? "刷新中" : "刷新早报"}
             </button>
+          ) : activeView === "valuation" ? (
+            <button
+              type="button"
+              onClick={() => refreshValuations(true)}
+              disabled={isValuationLoading}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              title="重新拉取全球指数估值数据"
+            >
+              <RefreshCw className={`size-4 ${isValuationLoading ? "animate-spin" : ""}`} />
+              {isValuationLoading ? "更新中" : "刷新估值"}
+            </button>
           ) : activeView === "qdii" ? (
             <button
               type="button"
@@ -1112,7 +1196,11 @@ export function ReportDashboard({
           </>
         ) : activeView === "valuation" ? (
           <>
-            <ValuationTable snapshot={valuations} />
+            <ValuationTable
+              snapshot={valuations}
+              isLoading={isValuationLoading}
+              message={valuationMessage}
+            />
           </>
         ) : activeView === "qdii" ? (
           <QdiiEtfGroups
