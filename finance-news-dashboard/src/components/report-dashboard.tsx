@@ -793,7 +793,7 @@ export function ReportDashboard({
 
   async function refreshQdiiQuotes() {
     setIsQdiiLoading(true);
-    setQdiiMessage("正在更新 QDII 价格、溢价率和申购状态...");
+    setQdiiMessage("正在快速更新 QDII 价格、溢价率和申购状态...");
 
     try {
       const response = await fetch("/api/qdii/quotes", {
@@ -802,9 +802,16 @@ export function ReportDashboard({
       if (!response.ok) {
         throw new Error(`QDII 行情更新失败：${response.status}`);
       }
-      const data = (await response.json()) as { quotes: Record<string, QdiiEtfQuote> };
+      const data = (await response.json()) as {
+        quotes: Record<string, QdiiEtfQuote>;
+        cached?: boolean;
+      };
       setQdiiQuotes(data.quotes);
-      setQdiiMessage("QDII 价格、溢价率和申购状态已更新");
+      setQdiiMessage(
+        data.cached
+          ? "QDII 已显示最近缓存，总份额使用快照"
+          : "QDII 价格、溢价率和申购状态已更新，总份额使用快照",
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "QDII 行情更新失败";
       setQdiiMessage(`${message}，已保留列表结构`);

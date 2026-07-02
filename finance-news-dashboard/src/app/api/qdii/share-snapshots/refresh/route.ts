@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
   }
 
   const quoteUrl = new URL("/api/qdii/quotes", request.url);
+  quoteUrl.searchParams.set("refreshShares", "1");
   const response = await fetch(quoteUrl, { cache: "no-store" });
   const payload = (await response.json()) as {
     updatedAt?: string;
@@ -53,4 +54,3 @@ export async function GET(request: NextRequest) {
     },
   );
 }
-

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -72,7 +72,15 @@ type ShareSnapshotFile = {
   entries: Record<string, ShareSnapshot[]>;
 };
 
+type QdiiQuotesResponse = {
+  updatedAt: string;
+  quotes: Record<string, QdiiEtfQuote>;
+  mode: "fast" | "full";
+  cached?: boolean;
+};
+
 const timeoutMs = 8000;
+const quoteCacheTtlMs = 45000;
 const execFileAsync = promisify(execFile);
 const shareSnapshotPath = join(process.cwd(), "data/runtime/qdii-share-snapshots.json");
 const shareSnapshotRedisKey = "qdii:share-snapshots:v1";
@@ -87,6 +95,8 @@ const eastmoneyStockDetailFields = [
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+let qdiiQuoteCache: { expiresAt: number; payload: QdiiQuotesResponse } | null = null;
 
 function withTimeout() {
   const controller = new AbortController();
@@ -767,19 +777,35 @@ async function fetchEastmoneyMobileEstimate(code: string) {
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const refreshShares = request.nextUrl.searchParams.get("refreshShares") === "1";
+  const now = Date.now();
+  if (!refreshShares && qdiiQuoteCache && qdiiQuoteCache.expiresAt > now) {
+    return NextResponse.json(
+      { ...qdiiQuoteCache.payload, cached: true },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
+
   const codes = [...new Set(qdiiGroups.flatMap((group) => group.items.map((item) => item.code)))];
   const [marketQuotes, shareSnapshots] = await Promise.all([
     fetchMarketQuotes(codes),
     readShareSnapshots(),
   ]);
+  const shareInfoTask = refreshShares
+    ? runLimited(codes, 3, async (code) => [code, await fetchEastmoneyShareInfo(code)] as const)
+    : Promise.resolve(codes.map((code) => [code, { totalShares: null, sourceTime: null }] as const));
   const [tencentQuotes, sinaQuotes, dailyQuotes, mobileEstimates, estimates, shareInfos, applyStatuses] = await Promise.all([
     fetchTencentQuotes(codes),
     fetchSinaQuotes(codes),
     runLimited(codes, 8, async (code) => [code, await fetchDailyQuote(code)] as const),
     runLimited(codes, 8, async (code) => [code, await fetchEastmoneyMobileEstimate(code)] as const),
     runLimited(codes, 8, async (code) => [code, await fetchFundEstimate(code)] as const),
-    runLimited(codes, 3, async (code) => [code, await fetchEastmoneyShareInfo(code)] as const),
+    shareInfoTask,
     fetchFundApplyStatuses(codes),
   ]);
   const dailyQuoteMap = new Map(dailyQuotes);
@@ -863,8 +889,12 @@ export async function GET() {
           ? `对比 ${previousShareSnapshot.date} 总份额`
           : "已记录总份额，下一次有历史快照后可计算净申赎"
         : latestStoredShareSnapshot
-          ? `使用 ${latestStoredShareSnapshot.date} 总份额快照，实时抓取暂未返回`
-          : "东财未返回总份额";
+          ? refreshShares
+            ? `使用 ${latestStoredShareSnapshot.date} 总份额快照，实时抓取暂未返回`
+            : `使用 ${latestStoredShareSnapshot.date} 总份额快照`
+          : refreshShares
+            ? "东财未返回总份额"
+            : "暂无总份额快照";
 
     upsertShareSnapshot(
       shareSnapshots,
@@ -923,10 +953,22 @@ export async function GET() {
     };
   }
 
-  await writeShareSnapshots(shareSnapshots);
+  if (refreshShares) {
+    await writeShareSnapshots(shareSnapshots);
+  }
+
+  const payload = {
+    updatedAt,
+    quotes,
+    mode: refreshShares ? "full" : "fast",
+  } satisfies QdiiQuotesResponse;
+  qdiiQuoteCache = {
+    expiresAt: Date.now() + quoteCacheTtlMs,
+    payload,
+  };
 
   return NextResponse.json(
-    { updatedAt, quotes },
+    payload,
     {
       headers: {
         "Cache-Control": "no-store",
