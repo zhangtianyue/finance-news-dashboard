@@ -273,6 +273,21 @@ function formatRealtimeEstimate(value: number | null | undefined) {
   return value.toFixed(4);
 }
 
+function formatShares(value: number | null | undefined) {
+  if (value == null) return "N/A";
+  const abs = Math.abs(value);
+  if (abs >= 100000000) return `${(abs / 100000000).toFixed(abs >= 10000000000 ? 1 : 2)}亿份`;
+  if (abs >= 10000) return `${(abs / 10000).toFixed(abs >= 10000000 ? 0 : 1)}万份`;
+  return `${abs.toFixed(0)}份`;
+}
+
+function shareChangeLabel(value: number | null | undefined) {
+  if (value == null) return "待累计";
+  if (value > 0) return "净申购";
+  if (value < 0) return "净赎回";
+  return "无变化";
+}
+
 function metricClass(value: number | null | undefined) {
   if (value == null) return "text-slate-500";
   if (value > 0) return "text-red-700";
@@ -331,7 +346,7 @@ function QdiiEtfGroups({
           </div>
           <h2 className="text-xl font-semibold text-slate-950">按跟踪类型分组</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            这些是 A 股场内可交易的跨境 ETF/QDII 代表产品。价格和涨跌幅来自东方财富，实时估值优先使用东方财富移动端口径；溢价率按场内现价相对实时估值计算。申购状态、日申购笔数和每日申购额度来自东方财富申购状态页或行情端，未披露时显示暂无。
+            这些是 A 股场内可交易的跨境 ETF/QDII 代表产品。价格和涨跌幅来自东方财富，实时估值优先使用东方财富移动端口径；溢价率按场内现价相对实时估值计算。总份额来自东方财富行情快照，净申赎按本地历史快照差额估算。
           </p>
         </div>
         <div className="font-mono text-xs text-slate-500">
@@ -363,18 +378,31 @@ function QdiiEtfGroups({
             </div>
 
             <div className="overflow-x-auto rounded-md border border-slate-200">
-              <table className="min-w-[1120px] w-full border-collapse text-left text-sm">
+              <table className="w-full min-w-[1380px] table-fixed border-collapse text-left text-sm">
+                <colgroup>
+                  <col className="w-[78px]" />
+                  <col className="w-[150px]" />
+                  <col className="w-[130px]" />
+                  <col className="w-[82px]" />
+                  <col className="w-[155px]" />
+                  <col className="w-[86px]" />
+                  <col className="w-[165px]" />
+                  <col className="w-[178px]" />
+                  <col className="w-[92px]" />
+                  <col className="w-[264px]" />
+                </colgroup>
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
-                    <th className="w-[88px] px-3 py-2 font-semibold">代码</th>
-                    <th className="w-[170px] px-3 py-2 font-semibold">名称</th>
-                    <th className="w-[150px] px-3 py-2 text-right font-semibold">现价/日期</th>
-                    <th className="w-[92px] px-3 py-2 text-right font-semibold">涨跌幅</th>
-                    <th className="w-[175px] px-3 py-2 text-right font-semibold">实时估值/时间</th>
-                    <th className="w-[98px] px-3 py-2 text-right font-semibold">溢价率</th>
-                    <th className="w-[190px] px-3 py-2 font-semibold">申购限制</th>
-                    <th className="w-[96px] px-3 py-2 text-right font-semibold">成交额</th>
-                    <th className="min-w-[230px] px-3 py-2 font-semibold">跟踪</th>
+                    <th className="px-3 py-2 font-semibold">代码</th>
+                    <th className="px-3 py-2 font-semibold">名称</th>
+                    <th className="px-3 py-2 text-right font-semibold">现价/日期</th>
+                    <th className="px-3 py-2 text-right font-semibold">涨跌幅</th>
+                    <th className="px-3 py-2 text-right font-semibold">实时估值/时间</th>
+                    <th className="px-3 py-2 text-right font-semibold">溢价率</th>
+                    <th className="px-3 py-2 font-semibold">份额/净申赎</th>
+                    <th className="px-3 py-2 font-semibold">申购限制</th>
+                    <th className="px-3 py-2 text-right font-semibold">成交额</th>
+                    <th className="px-3 py-2 font-semibold">跟踪</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -431,6 +459,43 @@ function QdiiEtfGroups({
                           )}`}
                         >
                           {formatMetric(quote?.premiumRate ?? null, "%")}
+                        </td>
+                        <td
+                          className="px-3 py-3"
+                          title={quote?.shareSnapshotNote ?? quote?.shareChangeSource ?? undefined}
+                        >
+                          <div className="space-y-1.5 text-xs">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="whitespace-nowrap text-slate-500">总份额</span>
+                              <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
+                                {formatShares(quote?.totalShares)}
+                              </span>
+                            </div>
+                            {quote?.totalSharesDate ? (
+                              <div className="whitespace-nowrap font-mono text-[11px] text-slate-500">
+                                {quote.totalSharesDate}
+                              </div>
+                            ) : null}
+                            <div
+                              className={`flex items-center justify-between gap-2 font-semibold ${metricClass(
+                                quote?.netShareChange,
+                              )}`}
+                            >
+                              <span className="whitespace-nowrap">
+                                {shareChangeLabel(quote?.netShareChange)}
+                              </span>
+                              <span className="whitespace-nowrap font-mono">
+                                {quote?.netShareChange == null
+                                  ? "首次记录"
+                                  : formatShares(quote.netShareChange)}
+                              </span>
+                            </div>
+                            {quote?.previousTotalSharesDate ? (
+                              <div className="whitespace-nowrap text-[11px] text-slate-500">
+                                较 {quote.previousTotalSharesDate}
+                              </div>
+                            ) : null}
+                          </div>
                         </td>
                         <td
                           className="px-3 py-3"

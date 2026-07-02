@@ -70,6 +70,15 @@ export type QdiiEtfQuote = {
   subscriptionSource: string | null;
   subscriptionSourceUrl: string | null;
   subscriptionNote: string | null;
+  totalShares: number | null;
+  totalSharesDate: string | null;
+  totalSharesTime: string | null;
+  previousTotalShares: number | null;
+  previousTotalSharesDate: string | null;
+  netShareChange: number | null;
+  netShareChangePct: number | null;
+  shareChangeSource: string | null;
+  shareSnapshotNote: string | null;
   updatedAt: string;
   status: "ok" | "partial" | "missing";
 };
