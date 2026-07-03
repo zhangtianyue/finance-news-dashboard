@@ -14,7 +14,7 @@ import {
   Sparkles,
   TrendingUp,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   GlobalValuationSnapshot,
@@ -32,6 +32,35 @@ import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
 type DashboardView = "report" | "valuation" | "qdii" | "dividends" | "dca";
+type DashboardNavItem = {
+  view: DashboardView;
+  label: string;
+  icon: ReactNode;
+  title: string;
+};
+
+const dashboardViews = new Set<DashboardView>([
+  "report",
+  "valuation",
+  "qdii",
+  "dividends",
+  "dca",
+]);
+
+function isDashboardView(value: string | null): value is DashboardView {
+  return value != null && dashboardViews.has(value as DashboardView);
+}
+
+function readDashboardViewFromLocation() {
+  if (typeof window === "undefined") return "report";
+
+  const view = new URLSearchParams(window.location.search).get("view");
+  return isDashboardView(view) ? view : "report";
+}
+
+function dashboardViewHref(view: DashboardView) {
+  return view === "report" ? "/" : `/?view=${view}`;
+}
 
 function sourceLabel(source: SourceId) {
   return {
@@ -911,6 +940,26 @@ export function ReportDashboard({
     [report],
   );
 
+  const switchView = useCallback((view: DashboardView) => {
+    setActiveView(view);
+
+    if (typeof window === "undefined") return;
+
+    const href = dashboardViewHref(view);
+    const currentHref = `${window.location.pathname}${window.location.search}`;
+    if (currentHref !== href) {
+      window.history.pushState(null, "", href);
+    }
+  }, []);
+
+  const handleViewLinkClick = useCallback(
+    (view: DashboardView) => (event: MouseEvent<HTMLAnchorElement>) => {
+      event.preventDefault();
+      switchView(view);
+    },
+    [switchView],
+  );
+
   async function refreshReport(mode: "manual" | "auto" = "manual") {
     if (mode === "manual") {
       setIsRefreshing(true);
@@ -1073,6 +1122,16 @@ export function ReportDashboard({
   }, []);
 
   useEffect(() => {
+    const syncViewFromUrl = () => {
+      setActiveView(readDashboardViewFromLocation());
+    };
+
+    syncViewFromUrl();
+    window.addEventListener("popstate", syncViewFromUrl);
+    return () => window.removeEventListener("popstate", syncViewFromUrl);
+  }, []);
+
+  useEffect(() => {
     if (activeView !== "valuation" || hasRefreshedValuations || isValuationLoading) {
       return;
     }
@@ -1133,6 +1192,39 @@ export function ReportDashboard({
             ? `A 股股息率 > ${ashareDividendMinimumYield}%`
             : "定投回测器";
 
+  const navItems: DashboardNavItem[] = [
+    {
+      view: "report",
+      label: "财经早报",
+      icon: <Rss className="size-3.5" />,
+      title: "查看开盘前财经早报",
+    },
+    {
+      view: "valuation",
+      label: "估值雷达",
+      icon: <TrendingUp className="size-3.5" />,
+      title: "查看全球指数市盈率和估值表",
+    },
+    {
+      view: "qdii",
+      label: "QDII ETF",
+      icon: <Globe2 className="size-3.5" />,
+      title: "查看大陆上市 QDII ETF 价格和溢价率",
+    },
+    {
+      view: "dividends",
+      label: "A股股息",
+      icon: <BadgePercent className="size-3.5" />,
+      title: `查看 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`,
+    },
+    {
+      view: "dca",
+      label: "定投回测",
+      icon: <PiggyBank className="size-3.5" />,
+      title: "查看定投回测器",
+    },
+  ];
+
   return (
     <main className="min-h-screen bg-[#eef2f5] text-slate-950">
       <div className="border-b border-slate-200 bg-white">
@@ -1140,71 +1232,22 @@ export function ReportDashboard({
           <div>
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <div className="flex w-full flex-wrap gap-1 rounded-md border border-slate-200 bg-slate-100 p-1 sm:inline-flex sm:w-auto sm:flex-nowrap">
-                <button
-                  type="button"
-                  onClick={() => setActiveView("report")}
-                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
-                    activeView === "report"
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white hover:text-slate-950"
-                  }`}
-                  title="查看开盘前财经早报"
-                >
-                  <Rss className="size-3.5" />
-                  财经早报
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveView("valuation")}
-                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
-                    activeView === "valuation"
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white hover:text-slate-950"
-                  }`}
-                  title="查看全球指数市盈率和估值表"
-                >
-                  <TrendingUp className="size-3.5" />
-                  估值雷达
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveView("qdii")}
-                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
-                    activeView === "qdii"
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white hover:text-slate-950"
-                  }`}
-                  title="查看大陆上市 QDII ETF 价格和溢价率"
-                >
-                  <Globe2 className="size-3.5" />
-                  QDII ETF
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveView("dividends")}
-                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
-                    activeView === "dividends"
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white hover:text-slate-950"
-                  }`}
-                  title={`查看 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`}
-                >
-                  <BadgePercent className="size-3.5" />
-                  A股股息
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveView("dca")}
-                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
-                    activeView === "dca"
-                      ? "bg-slate-900 text-white shadow-sm"
-                      : "text-slate-600 hover:bg-white hover:text-slate-950"
-                  }`}
-                  title="查看定投回测器"
-                >
-                  <PiggyBank className="size-3.5" />
-                  定投回测
-                </button>
+                {navItems.map((item) => (
+                  <a
+                    key={item.view}
+                    href={dashboardViewHref(item.view)}
+                    onClick={handleViewLinkClick(item.view)}
+                    className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
+                      activeView === item.view
+                        ? "bg-slate-900 text-white shadow-sm"
+                        : "text-slate-600 hover:bg-white hover:text-slate-950"
+                    }`}
+                    title={item.title}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </a>
+                ))}
               </div>
               <span className="inline-flex items-center gap-2 rounded border border-slate-200 px-3 py-1.5 font-mono text-xs text-slate-600">
                 <Clock3 className="size-3.5" />
