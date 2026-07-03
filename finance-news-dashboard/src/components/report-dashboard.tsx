@@ -15,7 +15,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   GlobalValuationSnapshot,
   IndexValuation,
@@ -319,6 +319,124 @@ function shareChangeLabel(value: number | null | undefined) {
   if (value > 0) return "净申购";
   if (value < 0) return "净赎回";
   return "无变化";
+}
+
+type ClientShareSnapshot = {
+  date: string;
+  totalShares: number;
+  sourceTime: string | null;
+  recordedAt: string;
+};
+
+type ClientShareSnapshotFile = Record<string, ClientShareSnapshot[]>;
+
+const qdiiShareSnapshotStorageKey = "finance-news-dashboard:qdii-share-snapshots:v1";
+
+function readClientShareSnapshots(): ClientShareSnapshotFile {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(qdiiShareSnapshotStorageKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as ClientShareSnapshotFile) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeClientShareSnapshots(file: ClientShareSnapshotFile) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(qdiiShareSnapshotStorageKey, JSON.stringify(file));
+  } catch {
+    // Browser storage may be disabled; server snapshots still work when available.
+  }
+}
+
+function latestClientShareSnapshot(snapshots: ClientShareSnapshot[]) {
+  return [...snapshots].sort(
+    (a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt),
+  )[0] ?? null;
+}
+
+function latestPreviousClientShareSnapshot(snapshots: ClientShareSnapshot[], date: string) {
+  return snapshots
+    .filter((snapshot) => snapshot.date < date)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt))[0] ?? null;
+}
+
+function upsertClientShareSnapshot(
+  file: ClientShareSnapshotFile,
+  code: string,
+  quote: QdiiEtfQuote,
+) {
+  if (quote.totalShares == null || !quote.totalSharesDate) return;
+
+  const snapshots = file[code] ?? [];
+  file[code] = snapshots
+    .filter((snapshot) => snapshot.date !== quote.totalSharesDate)
+    .concat({
+      date: quote.totalSharesDate,
+      totalShares: quote.totalShares,
+      sourceTime: quote.totalSharesTime,
+      recordedAt: quote.updatedAt,
+    })
+    .sort((a, b) => a.date.localeCompare(b.date) || a.recordedAt.localeCompare(b.recordedAt))
+    .slice(-120);
+}
+
+function enrichQdiiQuotesWithClientSnapshots(quotes: Record<string, QdiiEtfQuote>) {
+  const file = readClientShareSnapshots();
+  const nextQuotes: Record<string, QdiiEtfQuote> = {};
+  let shouldWrite = false;
+
+  for (const [code, quote] of Object.entries(quotes)) {
+    const snapshots = file[code] ?? [];
+    let nextQuote = quote;
+
+    if (quote.totalShares != null && quote.totalSharesDate) {
+      const previous = latestPreviousClientShareSnapshot(snapshots, quote.totalSharesDate);
+
+      if (!quote.previousTotalSharesDate && previous) {
+        const netShareChange = quote.totalShares - previous.totalShares;
+        nextQuote = {
+          ...quote,
+          previousTotalShares: previous.totalShares,
+          previousTotalSharesDate: previous.date,
+          netShareChange,
+          netShareChangePct:
+            previous.totalShares > 0 ? (netShareChange / previous.totalShares) * 100 : null,
+          shareChangeSource: quote.shareChangeSource ?? "浏览器本地总份额快照",
+          shareSnapshotNote: `对比浏览器本地 ${previous.date} 总份额快照`,
+        };
+      }
+
+      upsertClientShareSnapshot(file, code, quote);
+      shouldWrite = true;
+    } else {
+      const latest = latestClientShareSnapshot(snapshots);
+      if (latest) {
+        nextQuote = {
+          ...quote,
+          totalShares: latest.totalShares,
+          totalSharesDate: latest.date,
+          totalSharesTime: latest.sourceTime,
+          shareChangeSource: quote.shareChangeSource ?? "浏览器本地总份额快照",
+          shareSnapshotNote: `使用浏览器本地 ${latest.date} 总份额快照`,
+        };
+      }
+    }
+
+    nextQuotes[code] = nextQuote;
+  }
+
+  if (shouldWrite) {
+    writeClientShareSnapshots(file);
+  }
+
+  return nextQuotes;
 }
 
 function metricClass(value: number | null | undefined) {
@@ -771,12 +889,14 @@ export function ReportDashboard({
   const [valuations, setValuations] = useState(initialValuations);
   const [activeView, setActiveView] = useState<DashboardView>("report");
   const [hasRefreshedValuations, setHasRefreshedValuations] = useState(false);
+  const [hasRefreshedQdii, setHasRefreshedQdii] = useState(false);
   const [isValuationLoading, setIsValuationLoading] = useState(false);
   const [valuationMessage, setValuationMessage] = useState<string | null>(
     initialValuations.message ?? null,
   );
   const [qdiiQuotes, setQdiiQuotes] = useState<Record<string, QdiiEtfQuote>>({});
   const [isQdiiLoading, setIsQdiiLoading] = useState(false);
+  const [isQdiiShareLoading, setIsQdiiShareLoading] = useState(false);
   const [qdiiMessage, setQdiiMessage] = useState<string | null>(null);
   const [dividendSnapshot, setDividendSnapshot] = useState<AshareDividendSnapshot | null>(null);
   const [isDividendLoading, setIsDividendLoading] = useState(false);
@@ -829,8 +949,35 @@ export function ReportDashboard({
     }
   }
 
-  async function refreshQdiiQuotes() {
+  const refreshQdiiShareSnapshots = useCallback(async () => {
+    if (isQdiiShareLoading) return;
+
+    setIsQdiiShareLoading(true);
+    setQdiiMessage("QDII 价格已显示，正在后台补充总份额快照...");
+
+    try {
+      const response = await fetch("/api/qdii/quotes?refreshShares=1", {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`总份额快照更新失败：${response.status}`);
+      }
+      const data = (await response.json()) as {
+        quotes: Record<string, QdiiEtfQuote>;
+      };
+      setQdiiQuotes(enrichQdiiQuotesWithClientSnapshots(data.quotes));
+      setQdiiMessage("QDII 总份额已补充；首次记录表示当前设备或服务端还没有上一条快照。");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "总份额快照更新失败";
+      setQdiiMessage(`${message}，价格和溢价率不受影响`);
+    } finally {
+      setIsQdiiShareLoading(false);
+    }
+  }, [isQdiiShareLoading]);
+
+  const refreshQdiiQuotes = useCallback(async () => {
     setIsQdiiLoading(true);
+    setHasRefreshedQdii(true);
     setQdiiMessage("正在快速更新 QDII 价格、溢价率和申购状态...");
 
     try {
@@ -844,19 +991,33 @@ export function ReportDashboard({
         quotes: Record<string, QdiiEtfQuote>;
         cached?: boolean;
       };
-      setQdiiQuotes(data.quotes);
+      const quotes = enrichQdiiQuotesWithClientSnapshots(data.quotes);
+      const needsShareRefresh = Object.values(quotes).some(
+        (quote) =>
+          quote.totalShares == null ||
+          quote.totalSharesDate == null ||
+          (quote.priceDate != null &&
+            quote.totalSharesDate != null &&
+            quote.totalSharesDate < quote.priceDate),
+      );
+      setQdiiQuotes(quotes);
       setQdiiMessage(
         data.cached
           ? "QDII 已显示最近缓存，总份额使用快照"
           : "QDII 价格、溢价率和申购状态已更新，总份额使用快照",
       );
+      if (needsShareRefresh) {
+        window.setTimeout(() => {
+          void refreshQdiiShareSnapshots();
+        }, 0);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "QDII 行情更新失败";
       setQdiiMessage(`${message}，已保留列表结构`);
     } finally {
       setIsQdiiLoading(false);
     }
-  }
+  }, [refreshQdiiShareSnapshots]);
 
   async function refreshValuations(force = false) {
     setIsValuationLoading(true);
@@ -924,7 +1085,12 @@ export function ReportDashboard({
   }, [activeView, hasRefreshedValuations, isValuationLoading]);
 
   useEffect(() => {
-    if (activeView !== "qdii" || Object.keys(qdiiQuotes).length > 0 || isQdiiLoading) {
+    if (
+      activeView !== "qdii" ||
+      hasRefreshedQdii ||
+      Object.keys(qdiiQuotes).length > 0 ||
+      isQdiiLoading
+    ) {
       return;
     }
 
@@ -933,7 +1099,7 @@ export function ReportDashboard({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [activeView, isQdiiLoading, qdiiQuotes]);
+  }, [activeView, hasRefreshedQdii, isQdiiLoading, qdiiQuotes, refreshQdiiQuotes]);
 
   useEffect(() => {
     if (activeView !== "dividends" || dividendSnapshot || isDividendLoading) {
@@ -1076,12 +1242,14 @@ export function ReportDashboard({
             <button
               type="button"
               onClick={refreshQdiiQuotes}
-              disabled={isQdiiLoading}
+              disabled={isQdiiLoading || isQdiiShareLoading}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title="重新拉取 QDII 价格、估算净值和溢价率"
             >
-              <RefreshCw className={`size-4 ${isQdiiLoading ? "animate-spin" : ""}`} />
-              {isQdiiLoading ? "更新中" : "刷新 QDII"}
+              <RefreshCw
+                className={`size-4 ${isQdiiLoading || isQdiiShareLoading ? "animate-spin" : ""}`}
+              />
+              {isQdiiLoading || isQdiiShareLoading ? "更新中" : "刷新 QDII"}
             </button>
           ) : activeView === "dividends" ? (
             <button
