@@ -4,6 +4,8 @@ import {
   fetchAshareDividendSnapshot,
 } from "@/lib/a-share-dividends";
 
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   try {
     const force = request.nextUrl.searchParams.get("refresh") === "1";

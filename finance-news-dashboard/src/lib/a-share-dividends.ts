@@ -84,6 +84,7 @@ const timeoutMs = 8000;
 const dividendPageSize = 500;
 const dividendSnapshotTtlMs = 10 * 60 * 1000;
 const dividendSnapshotPath = join(process.cwd(), "data/runtime/a-share-dividends.json");
+const dividendSeedSnapshotPath = join(process.cwd(), "data/seeds/a-share-dividends.json");
 const dividendSnapshotRedisKey = "a-share-dividends:snapshot:v1";
 const sourceName = "东方财富分红送配";
 const sourceUrl = "https://data.eastmoney.com/yjfp/";
@@ -206,6 +207,15 @@ async function readSavedSnapshot() {
 
   try {
     const text = await readFile(dividendSnapshotPath, "utf8");
+    const parsed = JSON.parse(text) as unknown;
+    return isSnapshot(parsed) ? parsed : null;
+  } catch {
+    // Vercel does not keep runtime files between deployments. The committed seed
+    // keeps the dividend tab useful when live Eastmoney refresh times out.
+  }
+
+  try {
+    const text = await readFile(dividendSeedSnapshotPath, "utf8");
     const parsed = JSON.parse(text) as unknown;
     return isSnapshot(parsed) ? parsed : null;
   } catch {
@@ -552,6 +562,14 @@ export async function fetchAshareDividendSnapshot(
       payload: savedSnapshot,
     };
     return withCacheMessage(savedSnapshot);
+  }
+
+  if (!force && savedSnapshot) {
+    memorySnapshot = {
+      expiresAt: now + dividendSnapshotTtlMs,
+      payload: savedSnapshot,
+    };
+    return withCacheMessage(savedSnapshot, "已快速显示最近缓存，手动刷新可尝试更新");
   }
 
   try {
