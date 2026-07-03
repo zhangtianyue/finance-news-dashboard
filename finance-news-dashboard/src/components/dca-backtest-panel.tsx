@@ -157,20 +157,31 @@ function runDcaBacktest(prices: PricePoint[], settings: DcaSettings, symbol: str
   const series: DcaSeriesPoint[] = [];
   const trades: DcaTrade[] = [];
 
+  function executeBuy(point: PricePoint) {
+    const cashToInvest = settings.amount - settings.fee;
+    const sharesBought = cashToInvest / point.close;
+    shares += sharesBought;
+    invested += settings.amount;
+    trades.push({
+      date: point.date,
+      price: point.close,
+      invested: settings.amount,
+      sharesBought,
+      totalShares: shares,
+    });
+  }
+
   for (const point of prices) {
-    while (point.date >= nextBuyDate && nextBuyDate <= settings.endDate) {
-      const cashToInvest = settings.amount - settings.fee;
-      const sharesBought = cashToInvest / point.close;
-      shares += sharesBought;
-      invested += settings.amount;
-      trades.push({
-        date: point.date,
-        price: point.close,
-        invested: settings.amount,
-        sharesBought,
-        totalShares: shares,
-      });
-      nextBuyDate = advanceDate(nextBuyDate, settings.frequency);
+    if (settings.frequency === "daily") {
+      if (point.date >= nextBuyDate && point.date <= settings.endDate) {
+        executeBuy(point);
+        nextBuyDate = addDays(point.date, 1);
+      }
+    } else {
+      while (point.date >= nextBuyDate && nextBuyDate <= settings.endDate) {
+        executeBuy(point);
+        nextBuyDate = advanceDate(nextBuyDate, settings.frequency);
+      }
     }
 
     const value = shares * point.close;

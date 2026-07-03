@@ -512,11 +512,11 @@ function QdiiEtfGroups({
         </div>
       ) : null}
 
-      <div className="grid gap-5">
+      <div className="grid min-w-0 gap-5">
         {groups.map((group) => (
           <section
             key={group.id}
-            className="rounded-md border border-slate-200 bg-white p-5 shadow-sm"
+            className="min-w-0 rounded-md border border-slate-200 bg-white p-5 shadow-sm"
           >
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
@@ -1042,12 +1042,12 @@ export function ReportDashboard({
     }
   }
 
-  async function refreshDividendStocks() {
+  async function refreshDividendStocks(force = false) {
     setIsDividendLoading(true);
     setDividendMessage(`正在更新 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司...`);
 
     try {
-      const response = await fetch("/api/a-share/dividends", {
+      const response = await fetch(`/api/a-share/dividends${force ? "?refresh=1" : ""}`, {
         cache: "no-store",
       });
       if (!response.ok) {
@@ -1139,11 +1139,11 @@ export function ReportDashboard({
         <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-6 md:flex-row md:items-center md:justify-between lg:px-8">
           <div>
             <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-md border border-slate-200 bg-slate-100 p-1">
+              <div className="flex w-full flex-wrap gap-1 rounded-md border border-slate-200 bg-slate-100 p-1 sm:inline-flex sm:w-auto sm:flex-nowrap">
                 <button
                   type="button"
                   onClick={() => setActiveView("report")}
-                  className={`inline-flex h-8 items-center gap-2 rounded px-3 text-xs font-semibold transition-colors ${
+                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
                     activeView === "report"
                       ? "bg-slate-900 text-white shadow-sm"
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
@@ -1156,7 +1156,7 @@ export function ReportDashboard({
                 <button
                   type="button"
                   onClick={() => setActiveView("valuation")}
-                  className={`inline-flex h-8 items-center gap-2 rounded px-3 text-xs font-semibold transition-colors ${
+                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
                     activeView === "valuation"
                       ? "bg-slate-900 text-white shadow-sm"
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
@@ -1169,7 +1169,7 @@ export function ReportDashboard({
                 <button
                   type="button"
                   onClick={() => setActiveView("qdii")}
-                  className={`inline-flex h-8 items-center gap-2 rounded px-3 text-xs font-semibold transition-colors ${
+                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
                     activeView === "qdii"
                       ? "bg-slate-900 text-white shadow-sm"
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
@@ -1182,7 +1182,7 @@ export function ReportDashboard({
                 <button
                   type="button"
                   onClick={() => setActiveView("dividends")}
-                  className={`inline-flex h-8 items-center gap-2 rounded px-3 text-xs font-semibold transition-colors ${
+                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
                     activeView === "dividends"
                       ? "bg-slate-900 text-white shadow-sm"
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
@@ -1195,7 +1195,7 @@ export function ReportDashboard({
                 <button
                   type="button"
                   onClick={() => setActiveView("dca")}
-                  className={`inline-flex h-8 items-center gap-2 rounded px-3 text-xs font-semibold transition-colors ${
+                  className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
                     activeView === "dca"
                       ? "bg-slate-900 text-white shadow-sm"
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
@@ -1254,7 +1254,7 @@ export function ReportDashboard({
           ) : activeView === "dividends" ? (
             <button
               type="button"
-              onClick={refreshDividendStocks}
+              onClick={() => refreshDividendStocks(true)}
               disabled={isDividendLoading}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title={`重新拉取 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`}

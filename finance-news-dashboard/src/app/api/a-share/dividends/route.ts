@@ -1,12 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   createEmptyAshareDividendSnapshot,
   fetchAshareDividendSnapshot,
 } from "@/lib/a-share-dividends";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    return NextResponse.json(await fetchAshareDividendSnapshot(), {
+    const force = request.nextUrl.searchParams.get("refresh") === "1";
+    return NextResponse.json(await fetchAshareDividendSnapshot({ force }), {
       headers: {
         "Cache-Control": "no-store",
       },

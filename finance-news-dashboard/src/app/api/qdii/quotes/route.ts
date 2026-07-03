@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type { QdiiEtfQuote } from "@/lib/global-valuations";
@@ -84,6 +84,7 @@ const quoteCacheTtlMs = 45000;
 const execFileAsync = promisify(execFile);
 const shareSnapshotPath = join(process.cwd(), "data/runtime/qdii-share-snapshots.json");
 const shareSnapshotRedisKey = "qdii:share-snapshots:v1";
+const curlBinaryPath = "/usr/bin/curl";
 const eastmoneyStockDetailFields = [
   "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18",
   "f20,f21,f23,f38,f39,f40,f43,f44,f45,f46,f47,f48,f49,f50,f51,f52",
@@ -97,11 +98,41 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 let qdiiQuoteCache: { expiresAt: number; payload: QdiiQuotesResponse } | null = null;
+let curlAvailability: Promise<boolean> | null = null;
 
 function withTimeout() {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   return { controller, done: () => clearTimeout(timeout) };
+}
+
+async function hasCurlBinary() {
+  curlAvailability ??= access(curlBinaryPath).then(
+    () => true,
+    () => false,
+  );
+  return curlAvailability;
+}
+
+async function fetchWithCurl(url: string, headers: Record<string, string>, maxBuffer: number) {
+  if (!(await hasCurlBinary())) {
+    throw new Error("curl fallback is unavailable");
+  }
+
+  const headerArgs = Object.entries(headers).flatMap(([key, value]) => ["-H", `${key}: ${value}`]);
+  const args = [
+    "-sS",
+    "--http1.1",
+    "--compressed",
+    "--max-time",
+    String(Math.ceil(timeoutMs / 1000)),
+    ...headerArgs,
+    url,
+  ];
+  const { stdout } = await execFileAsync(curlBinaryPath, args, {
+    maxBuffer,
+  });
+  return stdout;
 }
 
 function secid(code: string) {
@@ -194,19 +225,7 @@ async function fetchJson<T>(url: string, headers: Record<string, string>) {
       done();
     }
   } catch {
-    const headerArgs = Object.entries(headers).flatMap(([key, value]) => ["-H", `${key}: ${value}`]);
-    const args = [
-      "-sS",
-      "--http1.1",
-      "--compressed",
-      "--max-time",
-      String(Math.ceil(timeoutMs / 1000)),
-      ...headerArgs,
-      url,
-    ];
-    const { stdout } = await execFileAsync("/usr/bin/curl", args, {
-      maxBuffer: 1024 * 1024 * 4,
-    });
+    const stdout = await fetchWithCurl(url, headers, 1024 * 1024 * 4);
     return JSON.parse(stdout) as T;
   }
 }
@@ -225,20 +244,7 @@ async function fetchText(url: string, headers: Record<string, string>) {
       done();
     }
   } catch {
-    const headerArgs = Object.entries(headers).flatMap(([key, value]) => ["-H", `${key}: ${value}`]);
-    const args = [
-      "-sS",
-      "--http1.1",
-      "--compressed",
-      "--max-time",
-      String(Math.ceil(timeoutMs / 1000)),
-      ...headerArgs,
-      url,
-    ];
-    const { stdout } = await execFileAsync("/usr/bin/curl", args, {
-      maxBuffer: 1024 * 1024 * 8,
-    });
-    return stdout;
+    return fetchWithCurl(url, headers, 1024 * 1024 * 8);
   }
 }
 

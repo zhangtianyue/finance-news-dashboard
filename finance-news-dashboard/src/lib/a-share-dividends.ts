@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import {
   ashareDividendContinuityYears,
   ashareDividendMinimumYield,
@@ -80,8 +82,18 @@ type EastmoneyDividendRow = {
 const eastmoneyEndpoint = "https://datacenter-web.eastmoney.com/api/data/v1/get";
 const timeoutMs = 8000;
 const dividendPageSize = 500;
+const dividendSnapshotTtlMs = 10 * 60 * 1000;
+const dividendSnapshotPath = join(process.cwd(), "data/runtime/a-share-dividends.json");
+const dividendSnapshotRedisKey = "a-share-dividends:snapshot:v1";
 const sourceName = "东方财富分红送配";
 const sourceUrl = "https://data.eastmoney.com/yjfp/";
+
+let memorySnapshot:
+  | {
+      expiresAt: number;
+      payload: AshareDividendSnapshot;
+    }
+  | null = null;
 
 function numberOrNull(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -129,6 +141,94 @@ function exchangeName(code: string) {
   if (code.startsWith("0") || code.startsWith("3")) return "深市";
   if (code.startsWith("8") || code.startsWith("9")) return "北交所";
   return "A股";
+}
+
+function redisConfig() {
+  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+  return url && token ? { url, token } : null;
+}
+
+async function upstashCommand<T>(command: unknown[]) {
+  const config = redisConfig();
+  if (!config) return null;
+
+  const response = await fetch(config.url, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${config.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(command),
+  });
+  const payload = (await response.json()) as { result?: T; error?: string };
+  if (!response.ok || payload.error) {
+    throw new Error(payload.error ?? `Upstash request failed: ${response.status}`);
+  }
+  return payload.result ?? null;
+}
+
+function isSnapshot(value: unknown): value is AshareDividendSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as AshareDividendSnapshot;
+  return (
+    typeof snapshot.updatedAt === "string" &&
+    typeof snapshot.message === "string" &&
+    Array.isArray(snapshot.rows)
+  );
+}
+
+function isFresh(snapshot: AshareDividendSnapshot) {
+  const updatedTime = Date.parse(snapshot.updatedAt);
+  return Number.isFinite(updatedTime) && Date.now() - updatedTime < dividendSnapshotTtlMs;
+}
+
+function withCacheMessage(snapshot: AshareDividendSnapshot, prefix = "已显示最近缓存") {
+  return {
+    ...snapshot,
+    message: `${prefix}：${snapshot.message}`,
+  } satisfies AshareDividendSnapshot;
+}
+
+async function readSavedSnapshot() {
+  if (redisConfig()) {
+    try {
+      const value = await upstashCommand<string | null>(["GET", dividendSnapshotRedisKey]);
+      if (value) {
+        const parsed = JSON.parse(value) as unknown;
+        return isSnapshot(parsed) ? parsed : null;
+      }
+    } catch {
+      // Fall through to local cache.
+    }
+  }
+
+  try {
+    const text = await readFile(dividendSnapshotPath, "utf8");
+    const parsed = JSON.parse(text) as unknown;
+    return isSnapshot(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSavedSnapshot(snapshot: AshareDividendSnapshot) {
+  if (redisConfig()) {
+    try {
+      await upstashCommand<string>(["SET", dividendSnapshotRedisKey, JSON.stringify(snapshot)]);
+      return;
+    } catch {
+      // Fall through to local write. Vercel needs KV/Upstash env vars for persistence.
+    }
+  }
+
+  try {
+    await mkdir(dirname(dividendSnapshotPath), { recursive: true });
+    await writeFile(dividendSnapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  } catch {
+    // Serverless environments may not have persistent project storage.
+  }
 }
 
 function eastmoneyQuoteMarket(code: string) {
@@ -385,7 +485,7 @@ export function createEmptyAshareDividendSnapshot(message = "尚未获取到 A �
   } satisfies AshareDividendSnapshot;
 }
 
-export async function fetchAshareDividendSnapshot(): Promise<AshareDividendSnapshot> {
+async function buildAshareDividendSnapshot(): Promise<AshareDividendSnapshot> {
   const reportDates = await fetchReportDates();
   const annualReportDates = reportDates.filter((value) => value.endsWith("-12-31"));
 
@@ -433,4 +533,40 @@ export async function fetchAshareDividendSnapshot(): Promise<AshareDividendSnaps
   return createEmptyAshareDividendSnapshot(
     `最近 ${ashareDividendContinuityYears} 个完整年度连续现金分红公司中，没有找到动态股息率高于 ${ashareDividendMinimumYield}% 的公司。`,
   );
+}
+
+export async function fetchAshareDividendSnapshot(
+  options: { force?: boolean } = {},
+): Promise<AshareDividendSnapshot> {
+  const force = options.force ?? false;
+  const now = Date.now();
+
+  if (!force && memorySnapshot && memorySnapshot.expiresAt > now) {
+    return withCacheMessage(memorySnapshot.payload);
+  }
+
+  const savedSnapshot = await readSavedSnapshot();
+  if (!force && savedSnapshot && isFresh(savedSnapshot)) {
+    memorySnapshot = {
+      expiresAt: now + dividendSnapshotTtlMs,
+      payload: savedSnapshot,
+    };
+    return withCacheMessage(savedSnapshot);
+  }
+
+  try {
+    const snapshot = await buildAshareDividendSnapshot();
+    memorySnapshot = {
+      expiresAt: now + dividendSnapshotTtlMs,
+      payload: snapshot,
+    };
+    await writeSavedSnapshot(snapshot);
+    return snapshot;
+  } catch (error) {
+    if (savedSnapshot) {
+      const message = error instanceof Error ? error.message : "数据源暂时不可用";
+      return withCacheMessage(savedSnapshot, `A 股股息率更新失败，已显示最近缓存（${message}）`);
+    }
+    throw error;
+  }
 }
