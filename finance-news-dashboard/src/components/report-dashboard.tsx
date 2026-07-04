@@ -661,13 +661,13 @@ function QdiiEtfGroups({
               </span>
             </div>
 
-            <div className="grid gap-3 xl:hidden">
+            <div className="grid gap-3 md:hidden">
               {group.items.map((item) => (
                 <QdiiEtfCard key={item.code} item={item} quote={quotes[item.code]} />
               ))}
             </div>
 
-            <div className="hidden overflow-hidden rounded-md border border-slate-200 xl:block">
+            <div className="hidden overflow-hidden rounded-md border border-slate-200 md:block">
               <table className="w-full table-fixed border-collapse text-left text-xs">
                 <colgroup>
                   <col className="w-[6%]" />
