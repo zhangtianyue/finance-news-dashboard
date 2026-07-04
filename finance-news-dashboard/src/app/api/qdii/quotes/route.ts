@@ -81,6 +81,7 @@ type QdiiQuotesResponse = {
 
 const timeoutMs = 8000;
 const fastSourceTimeoutMs = 2000;
+const cacheTimeoutMs = 1200;
 const quoteCacheTtlMs = 45000;
 const execFileAsync = promisify(execFile);
 const shareSnapshotPath = join(process.cwd(), "data/runtime/qdii-share-snapshots.json");
@@ -360,20 +361,26 @@ async function upstashCommand<T>(command: unknown[]) {
   const config = redisConfig();
   if (!config) return null;
 
-  const response = await fetch(config.url, {
-    method: "POST",
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-  });
-  const payload = (await response.json()) as { result?: T; error?: string };
-  if (!response.ok || payload.error) {
-    throw new Error(payload.error ?? `Upstash request failed: ${response.status}`);
+  const { controller, done } = withTimeout(cacheTimeoutMs);
+  try {
+    const response = await fetch(config.url, {
+      method: "POST",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    });
+    const payload = (await response.json()) as { result?: T; error?: string };
+    if (!response.ok || payload.error) {
+      throw new Error(payload.error ?? `Upstash request failed: ${response.status}`);
+    }
+    return payload.result ?? null;
+  } finally {
+    done();
   }
-  return payload.result ?? null;
 }
 
 function normalizeSubscriptionOpen(status: string | null) {
