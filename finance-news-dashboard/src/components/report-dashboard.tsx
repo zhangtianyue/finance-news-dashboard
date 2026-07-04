@@ -160,6 +160,13 @@ function formatShortDate(value: string | null | undefined) {
   return value.slice(5);
 }
 
+function formatCompactDateTime(value: string | null | undefined) {
+  if (!value) return "N/A";
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(value)) return value.slice(5, 16);
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(5, 10);
+  return value;
+}
+
 function bandClass(band: IndexValuation["valuationBand"]) {
   if (band === "低") return "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (band === "中") return "bg-sky-50 text-sky-700 border-sky-200";
@@ -500,6 +507,103 @@ function secondaryMarketStatus(status: string | null | undefined) {
   return `赎回 ${shortTradeStatus(status)}`;
 }
 
+function QdiiEtfCard({
+  item,
+  quote,
+}: {
+  item: QdiiEtfGroup["items"][number];
+  quote: QdiiEtfQuote | undefined;
+}) {
+  return (
+    <article className="rounded-md border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-mono text-sm font-semibold text-slate-950">{item.code}</div>
+          <div className="mt-1 truncate text-sm font-semibold text-slate-950">{item.name}</div>
+          <div className="mt-0.5 text-xs text-slate-500">{item.manager}</div>
+        </div>
+        <span
+          className={`shrink-0 rounded border px-2 py-1 text-xs font-semibold ${subscriptionStatusClass(
+            displaySubscriptionStatus(quote?.subscriptionStatus),
+          )}`}
+        >
+          {displaySubscriptionStatus(quote?.subscriptionStatus)}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <div>
+          <div className="text-slate-500">现价</div>
+          <div className={`mt-1 font-mono text-sm font-semibold ${metricClass(quote?.changePct)}`}>
+            {formatEtfPrice(quote?.price)}
+          </div>
+          <div className="mt-0.5 font-mono text-[11px] text-slate-500">
+            {formatCompactDateTime(quote?.priceTime ?? quote?.priceDate)}
+          </div>
+        </div>
+        <div>
+          <div className="text-slate-500">涨跌幅</div>
+          <div className={`mt-1 font-mono text-sm font-semibold ${metricClass(quote?.changePct)}`}>
+            {formatMetric(quote?.changePct ?? null, "%")}
+          </div>
+        </div>
+        <div>
+          <div className="text-slate-500">实时估值</div>
+          <div className="mt-1 font-mono text-sm font-semibold text-slate-950">
+            {formatRealtimeEstimate(quote?.nav)}
+          </div>
+          <div className="mt-0.5 font-mono text-[11px] text-slate-500">
+            {formatCompactDateTime(quote?.navTime)}
+          </div>
+        </div>
+        <div>
+          <div className="text-slate-500">溢价率</div>
+          <div className={`mt-1 font-mono text-sm font-semibold ${metricClass(quote?.premiumRate)}`}>
+            {formatMetric(quote?.premiumRate ?? null, "%")}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 text-xs sm:grid-cols-2">
+        <div>
+          <div className="text-slate-500">份额 / 净申赎</div>
+          <div className="mt-1 font-mono font-semibold text-slate-950">
+            {formatShares(quote?.totalShares)}
+            {quote?.totalSharesDate ? (
+              <span className="ml-2 font-normal text-slate-500">
+                {formatShortDate(quote.totalSharesDate)}
+              </span>
+            ) : null}
+          </div>
+          <div className={`mt-1 font-semibold ${metricClass(quote?.netShareChange)}`}>
+            {shareChangeLabel(quote?.netShareChange)}{" "}
+            <span className="font-mono">
+              {quote?.netShareChange == null ? "首次记录" : formatShares(quote.netShareChange)}
+            </span>
+          </div>
+        </div>
+        <div>
+          <div className="text-slate-500">申购限制</div>
+          <div className="mt-1 font-mono font-semibold text-slate-950">
+            日笔数 {quote?.dailySubscriptionCount ?? "暂无披露"}
+          </div>
+          <div className="mt-1 font-mono font-semibold text-slate-950">
+            日额度 {quote?.dailySubscriptionLimit ?? "暂无披露"}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs text-slate-600">
+        <div>
+          <span className="font-semibold text-slate-800">{item.tracking}</span>
+          <span className="ml-2">{item.market}</span>
+        </div>
+        <div className="font-mono">成交额 {formatAmount(quote?.amount)}</div>
+      </div>
+    </article>
+  );
+}
+
 function QdiiEtfGroups({
   groups,
   quotes,
@@ -545,9 +649,9 @@ function QdiiEtfGroups({
         {groups.map((group) => (
           <section
             key={group.id}
-            className="min-w-0 rounded-md border border-slate-200 bg-white p-5 shadow-sm"
+            className="min-w-0 rounded-md border border-slate-200 bg-white p-4 shadow-sm"
           >
-            <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-base font-semibold text-slate-950">{group.title}</h3>
                 <p className="mt-1 text-sm leading-6 text-slate-600">{group.description}</p>
@@ -557,32 +661,38 @@ function QdiiEtfGroups({
               </span>
             </div>
 
-            <div className="overflow-x-auto rounded-md border border-slate-200">
-              <table className="w-full min-w-[1260px] table-fixed border-collapse text-left text-sm">
+            <div className="grid gap-3 xl:hidden">
+              {group.items.map((item) => (
+                <QdiiEtfCard key={item.code} item={item} quote={quotes[item.code]} />
+              ))}
+            </div>
+
+            <div className="hidden overflow-hidden rounded-md border border-slate-200 xl:block">
+              <table className="w-full table-fixed border-collapse text-left text-xs">
                 <colgroup>
                   <col className="w-[6%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[11%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[7%]" />
-                  <col className="w-[12%]" />
-                  <col className="w-[14%]" />
+                  <col className="w-[10%]" />
                   <col className="w-[8%]" />
-                  <col className="w-[11%]" />
+                  <col className="w-[6%]" />
+                  <col className="w-[9%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[15%]" />
+                  <col className="w-[7%]" />
+                  <col className="w-[19%]" />
                 </colgroup>
                 <thead className="bg-slate-50 text-xs text-slate-500">
                   <tr>
-                    <th className="px-3 py-2 font-semibold">代码</th>
-                    <th className="px-3 py-2 font-semibold">名称</th>
-                    <th className="px-3 py-2 font-semibold">现价/日期</th>
-                    <th className="px-3 py-2 font-semibold">涨跌幅</th>
-                    <th className="px-3 py-2 font-semibold">实时估值/时间</th>
-                    <th className="px-3 py-2 font-semibold">溢价率</th>
-                    <th className="px-3 py-2 font-semibold">份额/净申赎</th>
-                    <th className="px-3 py-2 font-semibold">申购限制</th>
-                    <th className="px-3 py-2 font-semibold">成交额</th>
-                    <th className="px-3 py-2 font-semibold">跟踪</th>
+                    <th className="px-2 py-2 font-semibold">代码</th>
+                    <th className="px-2 py-2 font-semibold">名称</th>
+                    <th className="px-2 py-2 text-right font-semibold">现价/日期</th>
+                    <th className="px-2 py-2 text-right font-semibold">涨跌幅</th>
+                    <th className="px-2 py-2 text-right font-semibold">实时估值</th>
+                    <th className="px-2 py-2 text-right font-semibold">溢价率</th>
+                    <th className="px-2 py-2 font-semibold">份额/净申赎</th>
+                    <th className="px-2 py-2 font-semibold">申购限制</th>
+                    <th className="px-2 py-2 text-right font-semibold">成交额</th>
+                    <th className="px-2 py-2 font-semibold">跟踪</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -590,57 +700,57 @@ function QdiiEtfGroups({
                     const quote = quotes[item.code];
                     return (
                       <tr key={item.code} className="align-top hover:bg-slate-50">
-                        <td className="whitespace-nowrap px-3 py-3 font-mono text-xs font-semibold text-slate-950">
+                        <td className="whitespace-nowrap px-2 py-2 font-mono font-semibold text-slate-950">
                           {item.code}
                         </td>
-                        <td className="min-w-[150px] px-3 py-3">
+                        <td className="px-2 py-2">
                           <div className="whitespace-nowrap font-medium text-slate-950">
                             {item.name}
                           </div>
                           <div className="mt-1 text-xs text-slate-500">{item.manager}</div>
                         </td>
                         <td
-                          className={`px-3 py-3 font-mono ${metricClass(
+                          className={`px-2 py-2 text-right font-mono ${metricClass(
                             quote?.changePct,
                           )}`}
                         >
                           <div>{formatEtfPrice(quote?.price)}</div>
                           {quote?.priceTime || quote?.priceDate ? (
                             <div className="mt-1 whitespace-nowrap text-[11px] text-slate-500">
-                              {quote.priceTime ?? quote.priceDate}
+                              {formatCompactDateTime(quote.priceTime ?? quote.priceDate)}
                             </div>
                           ) : null}
                         </td>
                         <td
-                          className={`px-3 py-3 font-mono ${metricClass(
+                          className={`px-2 py-2 text-right font-mono ${metricClass(
                             quote?.changePct,
                           )}`}
                         >
                           {formatMetric(quote?.changePct ?? null, "%")}
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-2 py-2 text-right">
                           <div className="font-mono text-slate-950">
                             {formatRealtimeEstimate(quote?.nav)}
                           </div>
                           {quote?.navTime ? (
                             <div className="mt-1 whitespace-nowrap font-mono text-[11px] text-slate-500">
-                              {quote.navTime}
+                              {formatCompactDateTime(quote.navTime)}
                             </div>
                           ) : null}
                         </td>
                         <td
-                          className={`px-3 py-3 font-mono font-semibold ${metricClass(
+                          className={`px-2 py-2 text-right font-mono font-semibold ${metricClass(
                             quote?.premiumRate,
                           )}`}
                         >
                           {formatMetric(quote?.premiumRate ?? null, "%")}
                         </td>
                         <td
-                          className="px-3 py-3"
+                          className="px-2 py-2"
                           title={quote?.shareSnapshotNote ?? quote?.shareChangeSource ?? undefined}
                         >
                           <div className="space-y-1.5 text-xs">
-                            <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2">
+                            <div className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-1.5">
                               <span className="whitespace-nowrap text-slate-500">总份额</span>
                               <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
                                 {formatShares(quote?.totalShares)}
@@ -648,11 +758,11 @@ function QdiiEtfGroups({
                             </div>
                             {quote?.totalSharesDate ? (
                               <div className="whitespace-nowrap font-mono text-[11px] text-slate-500">
-                                {quote.totalSharesDate}
+                                {formatShortDate(quote.totalSharesDate)}
                               </div>
                             ) : null}
                             <div
-                              className={`grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 font-semibold ${metricClass(
+                              className={`grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-1.5 font-semibold ${metricClass(
                                 quote?.netShareChange,
                               )}`}
                             >
@@ -667,13 +777,13 @@ function QdiiEtfGroups({
                             </div>
                             {quote?.previousTotalSharesDate ? (
                               <div className="whitespace-nowrap text-[11px] text-slate-500">
-                                较 {quote.previousTotalSharesDate}
+                                较 {formatShortDate(quote.previousTotalSharesDate)}
                               </div>
                             ) : null}
                           </div>
                         </td>
                         <td
-                          className="px-3 py-3"
+                          className="px-2 py-2"
                           title={quote?.subscriptionNote ?? quote?.subscriptionSource ?? undefined}
                         >
                           <div className="space-y-1.5">
@@ -698,19 +808,19 @@ function QdiiEtfGroups({
                                 </a>
                               ) : null}
                             </div>
-                            <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 text-xs">
+                            <div className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-1.5 text-xs">
                               <span className="whitespace-nowrap text-slate-500">日笔数</span>
                               <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
                                 {quote?.dailySubscriptionCount ?? "暂无披露"}
                               </span>
                             </div>
-                            <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 text-xs">
+                            <div className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-1.5 text-xs">
                               <span className="whitespace-nowrap text-slate-500">日额度</span>
                               <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
                                 {quote?.dailySubscriptionLimit ?? "暂无披露"}
                               </span>
                             </div>
-                            <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 text-xs text-slate-500">
+                            <div className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-1.5 text-xs text-slate-500">
                               <span className="whitespace-nowrap">
                                 {secondaryMarketStatus(quote?.redemptionStatus)}
                               </span>
@@ -722,13 +832,15 @@ function QdiiEtfGroups({
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-3 font-mono text-slate-700">
+                        <td className="px-2 py-2 text-right font-mono text-slate-700">
                           {formatAmount(quote?.amount)}
                         </td>
-                        <td className="px-3 py-3">
+                        <td className="px-2 py-2">
                           <div className="text-slate-700">{item.tracking}</div>
                           <div className="mt-1 text-xs text-slate-500">{item.market}</div>
-                          <div className="mt-1 text-xs leading-5 text-slate-500">{item.note}</div>
+                          <div className="mt-1 max-h-10 overflow-hidden text-xs leading-5 text-slate-500">
+                            {item.note}
+                          </div>
                         </td>
                       </tr>
                     );
