@@ -85,6 +85,7 @@ const cacheTimeoutMs = 1200;
 const quoteCacheTtlMs = 45000;
 const execFileAsync = promisify(execFile);
 const shareSnapshotPath = join(process.cwd(), "data/runtime/qdii-share-snapshots.json");
+const qdiiQuoteSeedPath = join(process.cwd(), "data/seeds/qdii-quotes.json");
 const shareSnapshotRedisKey = "qdii:share-snapshots:v1";
 const curlBinaryPath = "/usr/bin/curl";
 const eastmoneyStockDetailFields = [
@@ -575,6 +576,20 @@ async function writeShareSnapshots(file: ShareSnapshotFile) {
   }
 }
 
+async function readQdiiQuoteSeed() {
+  try {
+    const text = await readFile(qdiiQuoteSeedPath, "utf8");
+    const parsed = JSON.parse(text) as QdiiQuotesResponse;
+    if (parsed && typeof parsed === "object" && parsed.quotes && parsed.mode) {
+      return parsed;
+    }
+  } catch {
+    // Seed is best-effort; live sources still run when requested.
+  }
+
+  return null;
+}
+
 async function fetchMarketQuotes(codes: string[], options: { timeoutMs?: number } = {}) {
   try {
     const params = [
@@ -821,9 +836,10 @@ async function fetchEastmoneyMobileEstimate(code: string) {
 
 export async function GET(request: NextRequest) {
   const refreshShares = request.nextUrl.searchParams.get("refreshShares") === "1";
+  const live = request.nextUrl.searchParams.get("live") === "1";
   const loadSlowFallbacks = request.nextUrl.searchParams.get("details") === "1";
   const now = Date.now();
-  if (!refreshShares && qdiiQuoteCache && qdiiQuoteCache.expiresAt > now) {
+  if (!live && !refreshShares && qdiiQuoteCache && qdiiQuoteCache.expiresAt > now) {
     return NextResponse.json(
       { ...qdiiQuoteCache.payload, cached: true },
       {
@@ -832,6 +848,20 @@ export async function GET(request: NextRequest) {
         },
       },
     );
+  }
+
+  if (!live && !refreshShares) {
+    const seed = await readQdiiQuoteSeed();
+    if (seed) {
+      return NextResponse.json(
+        { ...seed, cached: true },
+        {
+          headers: {
+            "Cache-Control": "no-store",
+          },
+        },
+      );
+    }
   }
 
   const codes = [...new Set(qdiiGroups.flatMap((group) => group.items.map((item) => item.code)))];

@@ -1052,11 +1052,52 @@ export function ReportDashboard({
       setQdiiQuotes(quotes);
       setQdiiMessage(
         data.cached
-          ? "QDII 已显示最近缓存，总份额使用快照"
+          ? "QDII 已快速显示最近快照，正在后台更新实时行情..."
           : needsShareRefresh
             ? "QDII 价格、溢价率和申购状态已更新；总份额在后台补充"
             : "QDII 价格、溢价率和申购状态已更新，总份额使用快照",
       );
+      if (data.cached) {
+        window.setTimeout(() => {
+          void (async () => {
+            try {
+              const liveResponse = await fetch("/api/qdii/quotes?live=1", {
+                cache: "no-store",
+              });
+              if (!liveResponse.ok) {
+                throw new Error(`实时行情更新失败：${liveResponse.status}`);
+              }
+              const liveData = (await liveResponse.json()) as {
+                quotes: Record<string, QdiiEtfQuote>;
+              };
+              const liveQuotes = enrichQdiiQuotesWithClientSnapshots(liveData.quotes);
+              const liveNeedsShareRefresh = Object.values(liveQuotes).some(
+                (quote) =>
+                  quote.totalShares == null ||
+                  quote.totalSharesDate == null ||
+                  (quote.priceDate != null &&
+                    quote.totalSharesDate != null &&
+                    quote.totalSharesDate < quote.priceDate),
+              );
+              setQdiiQuotes(liveQuotes);
+              setQdiiMessage(
+                liveNeedsShareRefresh
+                  ? "QDII 实时行情已更新；总份额在后台补充"
+                  : "QDII 实时行情已更新，总份额使用快照",
+              );
+              if (liveNeedsShareRefresh) {
+                window.setTimeout(() => {
+                  void refreshQdiiShareSnapshots();
+                }, 0);
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : "实时行情更新失败";
+              setQdiiMessage(`已显示最近快照；${message}`);
+            }
+          })();
+        }, 0);
+        return;
+      }
       if (needsShareRefresh) {
         window.setTimeout(() => {
           void refreshQdiiShareSnapshots();
