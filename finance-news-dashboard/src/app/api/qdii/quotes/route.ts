@@ -80,6 +80,7 @@ type QdiiQuotesResponse = {
 };
 
 const timeoutMs = 8000;
+const fastSourceTimeoutMs = 2000;
 const quoteCacheTtlMs = 45000;
 const execFileAsync = promisify(execFile);
 const shareSnapshotPath = join(process.cwd(), "data/runtime/qdii-share-snapshots.json");
@@ -101,9 +102,9 @@ export const maxDuration = 60;
 let qdiiQuoteCache: { expiresAt: number; payload: QdiiQuotesResponse } | null = null;
 let curlAvailability: Promise<boolean> | null = null;
 
-function withTimeout() {
+function withTimeout(durationMs = timeoutMs) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), durationMs);
   return { controller, done: () => clearTimeout(timeout) };
 }
 
@@ -115,7 +116,12 @@ async function hasCurlBinary() {
   return curlAvailability;
 }
 
-async function fetchWithCurl(url: string, headers: Record<string, string>, maxBuffer: number) {
+async function fetchWithCurl(
+  url: string,
+  headers: Record<string, string>,
+  maxBuffer: number,
+  durationMs = timeoutMs,
+) {
   if (!(await hasCurlBinary())) {
     throw new Error("curl fallback is unavailable");
   }
@@ -126,7 +132,7 @@ async function fetchWithCurl(url: string, headers: Record<string, string>, maxBu
     "--http1.1",
     "--compressed",
     "--max-time",
-    String(Math.ceil(timeoutMs / 1000)),
+    String(Math.ceil(durationMs / 1000)),
     ...headerArgs,
     url,
   ];
@@ -212,9 +218,13 @@ function tencentDateTime(value: string | undefined) {
   return { date, time };
 }
 
-async function fetchJson<T>(url: string, headers: Record<string, string>) {
+async function fetchJson<T>(
+  url: string,
+  headers: Record<string, string>,
+  options: { timeoutMs?: number; curlFallback?: boolean } = {},
+) {
   try {
-    const { controller, done } = withTimeout();
+    const { controller, done } = withTimeout(options.timeoutMs);
     try {
       const response = await fetch(url, {
         cache: "no-store",
@@ -226,14 +236,19 @@ async function fetchJson<T>(url: string, headers: Record<string, string>) {
       done();
     }
   } catch {
-    const stdout = await fetchWithCurl(url, headers, 1024 * 1024 * 4);
+    if (options.curlFallback === false) throw new Error("request timed out");
+    const stdout = await fetchWithCurl(url, headers, 1024 * 1024 * 4, options.timeoutMs);
     return JSON.parse(stdout) as T;
   }
 }
 
-async function fetchText(url: string, headers: Record<string, string>) {
+async function fetchText(
+  url: string,
+  headers: Record<string, string>,
+  options: { timeoutMs?: number; curlFallback?: boolean } = {},
+) {
   try {
-    const { controller, done } = withTimeout();
+    const { controller, done } = withTimeout(options.timeoutMs);
     try {
       const response = await fetch(url, {
         cache: "no-store",
@@ -245,7 +260,8 @@ async function fetchText(url: string, headers: Record<string, string>) {
       done();
     }
   } catch {
-    return fetchWithCurl(url, headers, 1024 * 1024 * 8);
+    if (options.curlFallback === false) throw new Error("request timed out");
+    return fetchWithCurl(url, headers, 1024 * 1024 * 8, options.timeoutMs);
   }
 }
 
@@ -448,7 +464,10 @@ async function fetchF10TradingStatus(code: string) {
   }
 }
 
-async function fetchFundApplyStatuses(codes: string[], options: { allowFallback?: boolean } = {}) {
+async function fetchFundApplyStatuses(
+  codes: string[],
+  options: { allowFallback?: boolean; timeoutMs?: number } = {},
+) {
   try {
     const params = [
       "t=8",
@@ -460,6 +479,9 @@ async function fetchFundApplyStatuses(codes: string[], options: { allowFallback?
       Referer: "https://fund.eastmoney.com/Fund_sgzt_bzdm.html",
       "User-Agent":
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    }, {
+      timeoutMs: options.timeoutMs,
+      curlFallback: options.timeoutMs == null,
     });
     const statuses = parseApplyStatusRows(text, codes);
     const missingCodes = options.allowFallback
@@ -546,7 +568,7 @@ async function writeShareSnapshots(file: ShareSnapshotFile) {
   }
 }
 
-async function fetchMarketQuotes(codes: string[]) {
+async function fetchMarketQuotes(codes: string[], options: { timeoutMs?: number } = {}) {
   try {
     const params = [
       "fltt=2",
@@ -560,6 +582,10 @@ async function fetchMarketQuotes(codes: string[]) {
         Referer: "https://quote.eastmoney.com/",
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      },
+      {
+        timeoutMs: options.timeoutMs,
+        curlFallback: options.timeoutMs == null,
       },
     );
     return new Map((data.data?.diff ?? []).map((item) => [item.f12 ?? "", item]));
@@ -604,8 +630,8 @@ async function fetchEastmoneyShareInfo(code: string) {
   } satisfies EastmoneyShareInfo;
 }
 
-async function fetchTencentQuotes(codes: string[]) {
-  const { controller, done } = withTimeout();
+async function fetchTencentQuotes(codes: string[], options: { timeoutMs?: number } = {}) {
+  const { controller, done } = withTimeout(options.timeoutMs);
   try {
     const response = await fetch(
       `https://qt.gtimg.cn/q=${codes.map(tencentSymbol).join(",")}`,
@@ -802,8 +828,9 @@ export async function GET(request: NextRequest) {
   }
 
   const codes = [...new Set(qdiiGroups.flatMap((group) => group.items.map((item) => item.code)))];
+  const sourceTimeout = loadSlowFallbacks ? timeoutMs : fastSourceTimeoutMs;
   const [marketQuotes, shareSnapshots] = await Promise.all([
-    fetchMarketQuotes(codes),
+    fetchMarketQuotes(codes, { timeoutMs: sourceTimeout }),
     readShareSnapshots(),
   ]);
   const shareInfoTask = refreshShares
@@ -823,10 +850,10 @@ export async function GET(request: NextRequest) {
         codes.map((code) => [code, null] as const),
       ] as const);
   const [tencentQuotes, fallbackQuotes, shareInfos, applyStatuses] = await Promise.all([
-    fetchTencentQuotes(codes),
+    fetchTencentQuotes(codes, { timeoutMs: sourceTimeout }),
     fallbackQuoteTask,
     shareInfoTask,
-    fetchFundApplyStatuses(codes),
+    fetchFundApplyStatuses(codes, { timeoutMs: sourceTimeout }),
   ]);
   const [sinaQuotes, dailyQuotes, mobileEstimates, estimates] = fallbackQuotes;
   const dailyQuoteMap = new Map(dailyQuotes);
