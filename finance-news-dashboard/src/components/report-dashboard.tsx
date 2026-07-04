@@ -685,13 +685,13 @@ function QdiiEtfGroups({
                   <tr>
                     <th className="px-2 py-2 font-semibold">代码</th>
                     <th className="px-2 py-2 font-semibold">名称</th>
-                    <th className="px-2 py-2 text-right font-semibold">现价/日期</th>
+                    <th className="py-2 pl-2 pr-4 text-right font-semibold">现价/日期</th>
                     <th className="px-2 py-2 text-right font-semibold">涨跌幅</th>
-                    <th className="px-2 py-2 text-right font-semibold">实时估值</th>
-                    <th className="px-2 py-2 text-right font-semibold">溢价率</th>
+                    <th className="py-2 pl-2 pr-4 text-right font-semibold">实时估值</th>
+                    <th className="py-2 pl-2 pr-4 text-right font-semibold">溢价率</th>
                     <th className="px-2 py-2 font-semibold">份额/净申赎</th>
                     <th className="px-2 py-2 font-semibold">申购限制</th>
-                    <th className="px-2 py-2 text-right font-semibold">成交额</th>
+                    <th className="py-2 pl-2 pr-4 text-right font-semibold">成交额</th>
                     <th className="px-2 py-2 font-semibold">跟踪</th>
                   </tr>
                 </thead>
@@ -710,7 +710,7 @@ function QdiiEtfGroups({
                           <div className="mt-1 text-xs text-slate-500">{item.manager}</div>
                         </td>
                         <td
-                          className={`px-2 py-2 text-right font-mono ${metricClass(
+                          className={`py-2 pl-2 pr-4 text-right font-mono ${metricClass(
                             quote?.changePct,
                           )}`}
                         >
@@ -728,7 +728,7 @@ function QdiiEtfGroups({
                         >
                           {formatMetric(quote?.changePct ?? null, "%")}
                         </td>
-                        <td className="px-2 py-2 text-right">
+                        <td className="py-2 pl-2 pr-4 text-right">
                           <div className="font-mono text-slate-950">
                             {formatRealtimeEstimate(quote?.nav)}
                           </div>
@@ -739,7 +739,7 @@ function QdiiEtfGroups({
                           ) : null}
                         </td>
                         <td
-                          className={`px-2 py-2 text-right font-mono font-semibold ${metricClass(
+                          className={`py-2 pl-2 pr-4 text-right font-mono font-semibold ${metricClass(
                             quote?.premiumRate,
                           )}`}
                         >
@@ -832,7 +832,7 @@ function QdiiEtfGroups({
                             </div>
                           </div>
                         </td>
-                        <td className="px-2 py-2 text-right font-mono text-slate-700">
+                        <td className="py-2 pl-2 pr-4 text-right font-mono text-slate-700">
                           {formatAmount(quote?.amount)}
                         </td>
                         <td className="px-2 py-2">
