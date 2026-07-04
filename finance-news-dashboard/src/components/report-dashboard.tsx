@@ -1053,7 +1053,9 @@ export function ReportDashboard({
       setQdiiMessage(
         data.cached
           ? "QDII 已显示最近缓存，总份额使用快照"
-          : "QDII 价格、溢价率和申购状态已更新，总份额使用快照",
+          : needsShareRefresh
+            ? "QDII 价格、溢价率和申购状态已更新；总份额在后台补充"
+            : "QDII 价格、溢价率和申购状态已更新，总份额使用快照",
       );
       if (needsShareRefresh) {
         window.setTimeout(() => {
@@ -1285,14 +1287,14 @@ export function ReportDashboard({
             <button
               type="button"
               onClick={refreshQdiiQuotes}
-              disabled={isQdiiLoading || isQdiiShareLoading}
+              disabled={isQdiiLoading}
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title="重新拉取 QDII 价格、估算净值和溢价率"
             >
               <RefreshCw
-                className={`size-4 ${isQdiiLoading || isQdiiShareLoading ? "animate-spin" : ""}`}
+                className={`size-4 ${isQdiiLoading ? "animate-spin" : ""}`}
               />
-              {isQdiiLoading || isQdiiShareLoading ? "更新中" : "刷新 QDII"}
+              {isQdiiLoading ? "更新中" : "刷新 QDII"}
             </button>
           ) : activeView === "dividends" ? (
             <button

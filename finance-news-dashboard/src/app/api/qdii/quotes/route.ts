@@ -96,6 +96,7 @@ const eastmoneyStockDetailFields = [
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 let qdiiQuoteCache: { expiresAt: number; payload: QdiiQuotesResponse } | null = null;
 let curlAvailability: Promise<boolean> | null = null;
@@ -447,7 +448,7 @@ async function fetchF10TradingStatus(code: string) {
   }
 }
 
-async function fetchFundApplyStatuses(codes: string[]) {
+async function fetchFundApplyStatuses(codes: string[], options: { allowFallback?: boolean } = {}) {
   try {
     const params = [
       "t=8",
@@ -461,7 +462,9 @@ async function fetchFundApplyStatuses(codes: string[]) {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
     });
     const statuses = parseApplyStatusRows(text, codes);
-    const missingCodes = codes.filter((code) => !statuses.has(code));
+    const missingCodes = options.allowFallback
+      ? codes.filter((code) => !statuses.has(code))
+      : [];
 
     if (missingCodes.length > 0) {
       const fallbackStatuses = await runLimited(missingCodes, 6, fetchF10TradingStatus);
@@ -785,6 +788,7 @@ async function fetchEastmoneyMobileEstimate(code: string) {
 
 export async function GET(request: NextRequest) {
   const refreshShares = request.nextUrl.searchParams.get("refreshShares") === "1";
+  const loadSlowFallbacks = request.nextUrl.searchParams.get("details") === "1";
   const now = Date.now();
   if (!refreshShares && qdiiQuoteCache && qdiiQuoteCache.expiresAt > now) {
     return NextResponse.json(
@@ -805,15 +809,26 @@ export async function GET(request: NextRequest) {
   const shareInfoTask = refreshShares
     ? runLimited(codes, 3, async (code) => [code, await fetchEastmoneyShareInfo(code)] as const)
     : Promise.resolve(codes.map((code) => [code, { totalShares: null, sourceTime: null }] as const));
-  const [tencentQuotes, sinaQuotes, dailyQuotes, mobileEstimates, estimates, shareInfos, applyStatuses] = await Promise.all([
+  const fallbackQuoteTask = loadSlowFallbacks
+    ? Promise.all([
+        fetchSinaQuotes(codes),
+        runLimited(codes, 8, async (code) => [code, await fetchDailyQuote(code)] as const),
+        runLimited(codes, 8, async (code) => [code, await fetchEastmoneyMobileEstimate(code)] as const),
+        runLimited(codes, 8, async (code) => [code, await fetchFundEstimate(code)] as const),
+      ] as const)
+    : Promise.resolve([
+        new Map<string, DailyQuote>(),
+        codes.map((code) => [code, null] as const),
+        codes.map((code) => [code, null] as const),
+        codes.map((code) => [code, null] as const),
+      ] as const);
+  const [tencentQuotes, fallbackQuotes, shareInfos, applyStatuses] = await Promise.all([
     fetchTencentQuotes(codes),
-    fetchSinaQuotes(codes),
-    runLimited(codes, 8, async (code) => [code, await fetchDailyQuote(code)] as const),
-    runLimited(codes, 8, async (code) => [code, await fetchEastmoneyMobileEstimate(code)] as const),
-    runLimited(codes, 8, async (code) => [code, await fetchFundEstimate(code)] as const),
+    fallbackQuoteTask,
     shareInfoTask,
     fetchFundApplyStatuses(codes),
   ]);
+  const [sinaQuotes, dailyQuotes, mobileEstimates, estimates] = fallbackQuotes;
   const dailyQuoteMap = new Map(dailyQuotes);
   const mobileEstimateMap = new Map(mobileEstimates);
   const estimateMap = new Map(estimates);
