@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Activity,
   AlertTriangle,
   ArrowUpRight,
   BadgePercent,
@@ -29,9 +30,10 @@ import {
 import type { AshareDividendSnapshot } from "@/lib/a-share-dividends";
 import { DcaBacktestPanel } from "@/components/dca-backtest-panel";
 import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
+import type { PolymarketHotItem, PolymarketHotSnapshot } from "@/lib/polymarket-hot";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
-type DashboardView = "report" | "valuation" | "qdii" | "dividends" | "dca";
+type DashboardView = "report" | "valuation" | "qdii" | "dividends" | "polymarket" | "dca";
 type DashboardNavItem = {
   view: DashboardView;
   label: string;
@@ -44,6 +46,7 @@ const dashboardViews = new Set<DashboardView>([
   "valuation",
   "qdii",
   "dividends",
+  "polymarket",
   "dca",
 ]);
 
@@ -330,6 +333,270 @@ function formatAmount(value: number | null | undefined) {
   if (value >= 100000000) return `${(value / 100000000).toFixed(2)}亿`;
   if (value >= 10000) return `${(value / 10000).toFixed(0)}万`;
   return value.toFixed(0);
+}
+
+function formatUsdAmount(value: number | null | undefined) {
+  if (value == null) return "N/A";
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+function formatProbability(value: number | null | undefined) {
+  if (value == null) return "N/A";
+  return `${(value * 100).toFixed(value >= 0.1 ? 1 : 2)}%`;
+}
+
+function formatProbabilityChange(value: number | null | undefined) {
+  if (value == null) return "N/A";
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${(value * 100).toFixed(1)}pp`;
+}
+
+function probabilityChangeClass(value: number | null | undefined) {
+  if (value == null) return "text-slate-500";
+  if (value > 0) return "text-red-600";
+  if (value < 0) return "text-emerald-700";
+  return "text-slate-500";
+}
+
+function polymarketCategoryClass(category: PolymarketHotItem["category"]) {
+  if (category === "宏观利率") return "border-sky-200 bg-sky-50 text-sky-700";
+  if (category === "地缘风险") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (category === "科技/AI") return "border-violet-200 bg-violet-50 text-violet-700";
+  if (category === "加密资产") return "border-orange-200 bg-orange-50 text-orange-700";
+  if (category === "中国相关") return "border-red-200 bg-red-50 text-red-700";
+  if (category === "政治选举") return "border-indigo-200 bg-indigo-50 text-indigo-700";
+  if (category === "体育娱乐") return "border-slate-200 bg-slate-50 text-slate-600";
+  return "border-slate-200 bg-white text-slate-600";
+}
+
+function PolymarketHotCard({ item, rank }: { item: PolymarketHotItem; rank: number }) {
+  return (
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noreferrer"
+      className="group block rounded-md border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="flex size-7 shrink-0 items-center justify-center rounded bg-slate-900 font-mono text-xs font-semibold text-white">
+              {rank}
+            </span>
+            <span
+              className={`rounded border px-2 py-1 text-xs font-semibold ${polymarketCategoryClass(
+                item.category,
+              )}`}
+            >
+              {item.category}
+            </span>
+            <span className="font-mono text-xs text-slate-500">
+              截止 {item.endDateLabel}
+            </span>
+          </div>
+          <h3 className="text-sm font-semibold leading-6 text-slate-950">{item.title}</h3>
+        </div>
+        <ArrowUpRight className="mt-1 size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-900" />
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-4">
+        <div>
+          <div className="text-xs text-slate-500">当前概率</div>
+          <div className="mt-1 text-sm font-semibold text-slate-950">{item.probabilityLabel}</div>
+        </div>
+        <div>
+          <div className="text-xs text-slate-500">24h变化</div>
+          <div className={`mt-1 font-mono text-sm font-semibold ${probabilityChangeClass(item.change24h)}`}>
+            {formatProbabilityChange(item.change24h)}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-slate-500">24h成交</div>
+          <div className="mt-1 font-mono text-sm font-semibold text-slate-950">
+            {formatUsdAmount(item.volume24h)}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-slate-500">流动性</div>
+          <div className="mt-1 font-mono text-sm font-semibold text-slate-950">
+            {formatUsdAmount(item.liquidity)}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-[1.1fr_0.9fr]">
+        <div className="text-sm leading-6 text-slate-700">{item.summary}</div>
+        <div className="space-y-2 text-xs text-slate-600">
+          <div className="flex flex-wrap gap-1.5">
+            {item.marketImpact.map((impact) => (
+              <span key={impact} className="rounded border border-slate-200 bg-white px-2 py-1">
+                {impact}
+              </span>
+            ))}
+          </div>
+          <div className="leading-5 text-slate-500">{item.riskFocus}</div>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+function PolymarketCompactList({
+  title,
+  items,
+}: {
+  title: string;
+  items: PolymarketHotItem[];
+}) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+        <span className="font-mono text-xs text-slate-500">Top {items.length}</span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {items.length ? (
+          items.map((item) => (
+            <a
+              key={item.id}
+              href={item.url}
+              target="_blank"
+              rel="noreferrer"
+              className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm hover:bg-slate-50"
+            >
+              <div className="min-w-0">
+                <div className="line-clamp-2 font-medium leading-5 text-slate-950">{item.title}</div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                  <span>{item.category}</span>
+                  <span>{formatUsdAmount(item.volume24h)}</span>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-mono font-semibold text-slate-950">
+                  {formatProbability(item.probability)}
+                </div>
+                <div className={`mt-1 font-mono text-xs ${probabilityChangeClass(item.change24h)}`}>
+                  {formatProbabilityChange(item.change24h)}
+                </div>
+              </div>
+            </a>
+          ))
+        ) : (
+          <div className="rounded-md border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
+            暂无数据
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PolymarketHotPanel({
+  snapshot,
+  isLoading,
+  message,
+}: {
+  snapshot: PolymarketHotSnapshot | null;
+  isLoading: boolean;
+  message: string | null;
+}) {
+  const items = snapshot?.items ?? [];
+  const marketRelevant = snapshot?.marketRelevant ?? [];
+  const movers = snapshot?.movers ?? [];
+  const totalVolume24h = items.reduce((sum, item) => sum + (item.volume24h ?? 0), 0);
+  const biggestMover = movers[0];
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+            <Activity className="size-3.5" />
+            Polymarket 热点雷达
+          </div>
+          <h2 className="text-xl font-semibold text-slate-950">全球预测市场热度</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            按成交额、流动性、赔率变化和财经相关性筛选，优先标出可能影响利率、科技股、港股、A股、黄金、原油和加密资产的事件。
+          </p>
+        </div>
+        <div className="flex flex-col items-start gap-2 md:items-end">
+          <span
+            className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs font-semibold ${
+              snapshot?.status === "dynamic"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-slate-200 bg-white text-slate-600"
+            }`}
+          >
+            <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
+            {snapshot?.status === "dynamic" ? "动态更新" : "待更新"}
+          </span>
+          <div className="font-mono text-xs text-slate-500">
+            {snapshot?.updatedAtLabel ?? "待更新"}
+          </div>
+        </div>
+      </div>
+
+      {message ?? snapshot?.message ? (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <RefreshCw className={`size-4 text-emerald-600 ${isLoading ? "animate-spin" : ""}`} />
+          {message ?? snapshot?.message}
+        </div>
+      ) : null}
+
+      <div className="mb-4 grid gap-3 md:grid-cols-4">
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-medium text-slate-500">热点事件</div>
+          <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
+            {items.length}
+          </div>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-medium text-slate-500">财经相关</div>
+          <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
+            {marketRelevant.length}
+          </div>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-medium text-slate-500">24h成交</div>
+          <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
+            {formatUsdAmount(totalVolume24h)}
+          </div>
+        </div>
+        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="text-xs font-medium text-slate-500">最大异动</div>
+          <div
+            className={`mt-2 font-mono text-3xl font-semibold ${probabilityChangeClass(
+              biggestMover?.change24h,
+            )}`}
+          >
+            {formatProbabilityChange(biggestMover?.change24h)}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+        <div className="space-y-3">
+          {items.length ? (
+            items.slice(0, 12).map((item, index) => (
+              <PolymarketHotCard key={item.id} item={item} rank={index + 1} />
+            ))
+          ) : (
+            <div className="rounded-md border border-dashed border-slate-300 bg-white px-4 py-10 text-center text-sm text-slate-500">
+              暂无 Polymarket 热点数据
+            </div>
+          )}
+        </div>
+        <div className="space-y-5">
+          <PolymarketCompactList title="市场相关" items={marketRelevant.slice(0, 8)} />
+          <PolymarketCompactList title="赔率异动" items={movers.slice(0, 8)} />
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function formatEtfPrice(value: number | null | undefined) {
@@ -1042,6 +1309,9 @@ export function ReportDashboard({
   const [dividendSnapshot, setDividendSnapshot] = useState<AshareDividendSnapshot | null>(null);
   const [isDividendLoading, setIsDividendLoading] = useState(false);
   const [dividendMessage, setDividendMessage] = useState<string | null>(null);
+  const [polymarketSnapshot, setPolymarketSnapshot] = useState<PolymarketHotSnapshot | null>(null);
+  const [isPolymarketLoading, setIsPolymarketLoading] = useState(false);
+  const [polymarketMessage, setPolymarketMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const [autoRefreshMessage, setAutoRefreshMessage] = useState<string | null>(null);
@@ -1268,6 +1538,28 @@ export function ReportDashboard({
     }
   }
 
+  async function refreshPolymarketHotspots(force = false) {
+    setIsPolymarketLoading(true);
+    setPolymarketMessage("正在更新 Polymarket 热点...");
+
+    try {
+      const response = await fetch(`/api/polymarket/hot${force ? "?refresh=1" : ""}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`Polymarket 热点更新失败：${response.status}`);
+      }
+      const data = (await response.json()) as PolymarketHotSnapshot;
+      setPolymarketSnapshot(data);
+      setPolymarketMessage(data.message);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Polymarket 热点更新失败";
+      setPolymarketMessage(`${message}，不影响其他栏目使用`);
+    } finally {
+      setIsPolymarketLoading(false);
+    }
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshReport("auto");
@@ -1327,11 +1619,25 @@ export function ReportDashboard({
     return () => window.clearTimeout(timer);
   }, [activeView, dividendSnapshot, isDividendLoading]);
 
+  useEffect(() => {
+    if (activeView !== "polymarket" || polymarketSnapshot || isPolymarketLoading) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      void refreshPolymarketHotspots();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeView, polymarketSnapshot, isPolymarketLoading]);
+
   const activeTimestamp =
     activeView === "report"
       ? report.generatedAtLabel
       : activeView === "dividends"
         ? dividendSnapshot?.updatedAtLabel ?? "待更新"
+        : activeView === "polymarket"
+          ? polymarketSnapshot?.updatedAtLabel ?? "待更新"
         : activeView === "dca"
           ? "按需运行"
           : valuations.asOfLabel;
@@ -1345,7 +1651,9 @@ export function ReportDashboard({
           ? "大陆上市 QDII ETF"
           : activeView === "dividends"
             ? `A 股股息率 > ${ashareDividendMinimumYield}%`
-            : "定投回测器";
+            : activeView === "polymarket"
+              ? "Polymarket 热点雷达"
+              : "定投回测器";
 
   const navItems: DashboardNavItem[] = [
     {
@@ -1371,6 +1679,12 @@ export function ReportDashboard({
       label: "A股股息",
       icon: <BadgePercent className="size-3.5" />,
       title: `查看 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`,
+    },
+    {
+      view: "polymarket",
+      label: "热点预测",
+      icon: <Activity className="size-3.5" />,
+      title: "查看 Polymarket 热点预测市场",
     },
     {
       view: "dca",
@@ -1459,6 +1773,17 @@ export function ReportDashboard({
             >
               <RefreshCw className={`size-4 ${isDividendLoading ? "animate-spin" : ""}`} />
               {isDividendLoading ? "更新中" : "刷新股息"}
+            </button>
+          ) : activeView === "polymarket" ? (
+            <button
+              type="button"
+              onClick={() => refreshPolymarketHotspots(true)}
+              disabled={isPolymarketLoading}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              title="重新拉取 Polymarket 热点预测市场"
+            >
+              <RefreshCw className={`size-4 ${isPolymarketLoading ? "animate-spin" : ""}`} />
+              {isPolymarketLoading ? "更新中" : "刷新热点"}
             </button>
           ) : null}
         </div>
@@ -1580,6 +1905,12 @@ export function ReportDashboard({
             snapshot={dividendSnapshot}
             isLoading={isDividendLoading}
             message={dividendMessage}
+          />
+        ) : activeView === "polymarket" ? (
+          <PolymarketHotPanel
+            snapshot={polymarketSnapshot}
+            isLoading={isPolymarketLoading}
+            message={polymarketMessage}
           />
         ) : (
           <DcaBacktestPanel />
