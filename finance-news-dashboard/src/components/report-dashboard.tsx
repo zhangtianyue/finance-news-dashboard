@@ -10,6 +10,7 @@ import {
   FileText,
   Flame,
   Globe2,
+  Layers3,
   PiggyBank,
   RefreshCw,
   Rss,
@@ -32,7 +33,7 @@ import type { AshareDividendSnapshot } from "@/lib/a-share-dividends";
 import { DcaBacktestPanel } from "@/components/dca-backtest-panel";
 import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 import type { PolymarketHotItem, PolymarketHotSnapshot } from "@/lib/polymarket-hot";
-import type { StockHeatItem, StockHeatSnapshot } from "@/lib/stock-heat";
+import type { StockHeatItem, StockHeatSector, StockHeatSnapshot } from "@/lib/stock-heat";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
 type DashboardView = "report" | "valuation" | "qdii" | "dividends" | "polymarket" | "dca";
@@ -352,6 +353,11 @@ function formatStockHeatAmount(item: StockHeatItem) {
   return formatAmount(item.amount);
 }
 
+function formatSectorHeatAmount(sector: StockHeatSector) {
+  if (sector.market === "美股") return formatUsdAmount(sector.amount);
+  return formatAmount(sector.amount);
+}
+
 function stockHeatChangeClass(value: number) {
   if (value > 0) return "text-red-600";
   if (value < 0) return "text-emerald-700";
@@ -459,6 +465,98 @@ function StockHeatList({
   );
 }
 
+function SectorHeatList({
+  title,
+  caption,
+  sectors,
+}: {
+  title: string;
+  caption: string;
+  sectors: StockHeatSector[];
+}) {
+  return (
+    <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:px-5">
+        <div>
+          <h4 className="text-base font-semibold text-slate-950">{title}</h4>
+          <p className="mt-1 text-xs leading-5 text-slate-500">{caption}</p>
+        </div>
+        <span className="shrink-0 font-mono text-xs font-semibold text-slate-700">
+          Top {sectors.length}
+        </span>
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {sectors.length ? (
+          sectors.map((sector) => (
+            <div
+              key={`${sector.market}-${sector.name}`}
+              className="grid grid-cols-[2rem_minmax(0,1fr)_auto] gap-3 px-4 py-3.5 sm:px-5"
+            >
+              <span
+                className={`flex size-7 items-center justify-center rounded font-mono text-xs font-semibold ${
+                  sector.rank <= 3 ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {sector.rank}
+              </span>
+
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="font-semibold text-slate-950">{sector.name}</span>
+                  <span className="font-mono text-xs text-slate-500">
+                    {sector.memberCount}只样本
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-xs text-slate-600">
+                  <span>成交 {formatSectorHeatAmount(sector)}</span>
+                  <span>均换手 {formatStrictPercent(sector.averageTurnoverRate)}</span>
+                  <span>均量比 {formatMetric(sector.averageVolumeRatio)}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                  <span>
+                    上涨 {sector.risingStocks} / 下跌 {sector.fallingStocks}
+                  </span>
+                  <a
+                    href={sector.leaderUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 font-medium text-slate-700 hover:text-slate-950"
+                  >
+                    热度股 {sector.leaderName}
+                    <ArrowUpRight className="size-3" />
+                  </a>
+                </div>
+              </div>
+
+              <div className="min-w-[5.25rem] text-right">
+                <div
+                  className={`font-mono text-sm font-semibold ${stockHeatChangeClass(
+                    sector.changePercent,
+                  )}`}
+                >
+                  {sector.changePercent > 0 ? "+" : ""}
+                  {sector.changePercent.toFixed(2)}%
+                </div>
+                <div className="mt-1 font-mono text-[11px] text-slate-500">成交加权</div>
+                <span
+                  className={`mt-2 inline-flex rounded border px-1.5 py-0.5 text-[11px] font-semibold ${stockHeatLevelClass(
+                    sector.heatLevel,
+                  )}`}
+                >
+                  {sector.heatLevel} {sector.heatScore.toFixed(0)}
+                </span>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="px-4 py-10 text-center text-sm text-slate-500">暂无板块热度数据</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function StockHeatPanel({
   snapshot,
   isLoading,
@@ -489,11 +587,11 @@ function StockHeatPanel({
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
             <Flame className="size-3.5" />
-            个股交易热度
+            股票市场热度
           </div>
-          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 热度 Top 10</h2>
+          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 热度排行</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            分市场综合成交额、量比、换手率、涨跌幅和盘中振幅，突出真正出现交易异动的个股。
+            分市场综合成交额、量比、换手率、涨跌幅和盘中振幅，同时观察个股异动和板块聚集度。
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -516,7 +614,11 @@ function StockHeatPanel({
         </div>
       ) : null}
 
-      <div className="grid items-start gap-5 xl:grid-cols-2">
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-slate-950">个股热度排行</h3>
+        <p className="mt-1 text-xs leading-5 text-slate-500">A股和美股分别计算，不跨市场比较分数。</p>
+      </div>
+      <div className="grid items-start gap-5 lg:grid-cols-2">
         <StockHeatList
           title="A股热度"
           caption="沪深京个股独立排名"
@@ -528,6 +630,30 @@ function StockHeatPanel({
           caption="纽交所、纳斯达克及美交所个股"
           items={snapshot?.usStocks ?? []}
           asOfLabel={snapshot?.usStockAsOfLabel ?? "待更新"}
+        />
+      </div>
+
+      <div className="mb-4 mt-8 flex items-center gap-3">
+        <span className="flex size-9 items-center justify-center rounded bg-slate-900 text-white">
+          <Layers3 className="size-4" />
+        </span>
+        <div>
+          <h3 className="text-base font-semibold text-slate-950">板块热度排行</h3>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            按活跃股票样本聚合成交额、涨跌、换手、量比和上涨家数。
+          </p>
+        </div>
+      </div>
+      <div className="grid items-start gap-5 lg:grid-cols-2">
+        <SectorHeatList
+          title="A股热门板块"
+          caption="沪深京活跃个股所属行业"
+          sectors={snapshot?.aShareSectors ?? []}
+        />
+        <SectorHeatList
+          title="美股热门板块"
+          caption="纽交所、纳斯达克及美交所行业"
+          sectors={snapshot?.usStockSectors ?? []}
         />
       </div>
     </section>

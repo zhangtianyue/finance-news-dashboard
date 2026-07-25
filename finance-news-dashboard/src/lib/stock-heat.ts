@@ -1,4 +1,5 @@
 export type StockHeatMarket = "A股" | "美股";
+export type StockHeatLevel = "沸腾" | "升温" | "活跃";
 
 export type StockHeatItem = {
   market: StockHeatMarket;
@@ -14,10 +15,30 @@ export type StockHeatItem = {
   amplitude: number | null;
   marketCap: number | null;
   heatScore: number;
-  heatLevel: "沸腾" | "升温" | "活跃";
+  heatLevel: StockHeatLevel;
   signals: string[];
   quoteTimeLabel: string;
   quoteUrl: string;
+};
+
+export type StockHeatSector = {
+  market: StockHeatMarket;
+  rank: number;
+  name: string;
+  heatScore: number;
+  heatLevel: StockHeatLevel;
+  changePercent: number;
+  amount: number;
+  averageTurnoverRate: number | null;
+  averageVolumeRatio: number | null;
+  memberCount: number;
+  activeStocks: number;
+  risingStocks: number;
+  fallingStocks: number;
+  leaderName: string;
+  leaderCode: string;
+  leaderChangePercent: number;
+  leaderUrl: string;
 };
 
 export type StockHeatSnapshot = {
@@ -31,6 +52,8 @@ export type StockHeatSnapshot = {
   usStockAsOfLabel: string;
   aShares: StockHeatItem[];
   usStocks: StockHeatItem[];
+  aShareSectors: StockHeatSector[];
+  usStockSectors: StockHeatSector[];
 };
 
 type RawRecord = Record<string, unknown>;
@@ -49,6 +72,12 @@ type StockHeatCandidate = {
   amplitude: number | null;
   marketCap: number | null;
   quoteTimestamp: number | null;
+};
+
+type RankedStockCandidate = StockHeatCandidate & {
+  heatScore: number;
+  heatLevel: StockHeatLevel;
+  signals: string[];
 };
 
 const eastmoneyFields = [
@@ -191,11 +220,11 @@ function stockSignals(candidate: StockHeatCandidate, score: number) {
   return signals.length ? signals.slice(0, 3) : ["成交额居前"];
 }
 
-function rankCandidates(candidates: StockHeatCandidate[]) {
+function scoreCandidates(candidates: StockHeatCandidate[]) {
   const maximumAmount = Math.max(...candidates.map((candidate) => candidate.amount), 0);
 
   return candidates
-    .map((candidate) => {
+    .map<RankedStockCandidate>((candidate) => {
       const isAshare = candidate.market === "A股";
       const score =
         amountScore(candidate.amount, maximumAmount) * 0.45 +
@@ -208,11 +237,15 @@ function rankCandidates(candidates: StockHeatCandidate[]) {
       return {
         ...candidate,
         heatScore,
-        heatLevel: heatScore >= 80 ? ("沸腾" as const) : heatScore >= 68 ? ("升温" as const) : ("活跃" as const),
+        heatLevel: heatScore >= 80 ? "沸腾" : heatScore >= 68 ? "升温" : "活跃",
         signals: stockSignals(candidate, heatScore),
       };
     })
-    .sort((left, right) => right.heatScore - left.heatScore || right.amount - left.amount)
+    .sort((left, right) => right.heatScore - left.heatScore || right.amount - left.amount);
+}
+
+function rankCandidates(candidates: RankedStockCandidate[]) {
+  return candidates
     .slice(0, 10)
     .map<StockHeatItem>((candidate, index) => ({
       market: candidate.market,
@@ -232,6 +265,102 @@ function rankCandidates(candidates: StockHeatCandidate[]) {
       signals: candidate.signals,
       quoteTimeLabel: shanghaiDateTimeFromSeconds(candidate.quoteTimestamp),
       quoteUrl: `https://quote.eastmoney.com/unify/r/${candidate.marketId}.${candidate.code}`,
+    }));
+}
+
+function average(values: Array<number | null>) {
+  const available = values.filter((value): value is number => value != null);
+  if (!available.length) return null;
+  return available.reduce((sum, value) => sum + value, 0) / available.length;
+}
+
+function rankSectors(candidates: RankedStockCandidate[]) {
+  const groups = new Map<string, RankedStockCandidate[]>();
+  for (const candidate of candidates) {
+    if (candidate.industry === "其他" || candidate.industry === "-") continue;
+    const current = groups.get(candidate.industry) ?? [];
+    current.push(candidate);
+    groups.set(candidate.industry, current);
+  }
+
+  const aggregates = [...groups.entries()]
+    .filter(([, members]) => members.length >= 2)
+    .map(([name, members]) => {
+      const amount = members.reduce((sum, member) => sum + member.amount, 0);
+      const leader = [...members].sort(
+        (left, right) => right.heatScore - left.heatScore || right.amount - left.amount,
+      )[0];
+      const weightedChange =
+        amount > 0
+          ? members.reduce(
+              (sum, member) => sum + member.changePercent * member.amount,
+              0,
+            ) / amount
+          : 0;
+
+      return {
+        market: members[0].market,
+        name,
+        amount,
+        changePercent: weightedChange,
+        averageTurnoverRate: average(members.map((member) => member.turnoverRate)),
+        averageVolumeRatio: average(members.map((member) => member.volumeRatio)),
+        averageStockHeat:
+          members
+            .slice(0, Math.min(members.length, 5))
+            .reduce((sum, member) => sum + member.heatScore, 0) /
+          Math.min(members.length, 5),
+        memberCount: members.length,
+        activeStocks: members.filter((member) => member.heatScore >= 68).length,
+        risingStocks: members.filter((member) => member.changePercent > 0).length,
+        fallingStocks: members.filter((member) => member.changePercent < 0).length,
+        leader,
+      };
+    });
+  const maximumAmount = Math.max(...aggregates.map((sector) => sector.amount), 0);
+
+  return aggregates
+    .map((sector) => {
+      const isAshare = sector.market === "A股";
+      const score =
+        metricScore(sector.amount, maximumAmount) * 0.4 +
+        metricScore(Math.abs(sector.changePercent), isAshare ? 6 : 5) * 0.2 +
+        metricScore(sector.averageTurnoverRate, isAshare ? 10 : 5) * 0.13 +
+        metricScore(sector.averageVolumeRatio, 2) * 0.12 +
+        metricScore(sector.averageStockHeat, 80) * 0.15;
+      const heatScore = Number(score.toFixed(1));
+
+      return {
+        ...sector,
+        heatScore,
+        heatLevel:
+          heatScore >= 78 ? ("沸腾" as const) : heatScore >= 63 ? ("升温" as const) : ("活跃" as const),
+      };
+    })
+    .sort((left, right) => right.heatScore - left.heatScore || right.amount - left.amount)
+    .slice(0, 10)
+    .map<StockHeatSector>((sector, index) => ({
+      market: sector.market,
+      rank: index + 1,
+      name: sector.name,
+      heatScore: sector.heatScore,
+      heatLevel: sector.heatLevel,
+      changePercent: Number(sector.changePercent.toFixed(2)),
+      amount: sector.amount,
+      averageTurnoverRate:
+        sector.averageTurnoverRate == null
+          ? null
+          : Number(sector.averageTurnoverRate.toFixed(2)),
+      averageVolumeRatio:
+        sector.averageVolumeRatio == null ? null : Number(sector.averageVolumeRatio.toFixed(2)),
+      memberCount: sector.memberCount,
+      activeStocks: sector.activeStocks,
+      risingStocks: sector.risingStocks,
+      fallingStocks: sector.fallingStocks,
+      leaderName: sector.leader.name,
+      leaderCode: sector.leader.code,
+      leaderChangePercent: sector.leader.changePercent,
+      leaderUrl: `https://quote.eastmoney.com/unify/r/${sector.leader.marketId}.${sector.leader.code}`,
     }));
 }
 
@@ -282,7 +411,11 @@ async function fetchMarketHeat(market: StockHeatMarket) {
     .map((row) => candidateFromRow(row, market))
     .filter((item): item is StockHeatCandidate => item != null);
   if (!candidates.length) throw new Error(`${market}没有可排名的股票`);
-  return rankCandidates(candidates);
+  const rankedCandidates = scoreCandidates(candidates);
+  return {
+    stocks: rankCandidates(rankedCandidates),
+    sectors: rankSectors(rankedCandidates),
+  };
 }
 
 function latestQuoteLabel(items: StockHeatItem[], fallback: string) {
@@ -301,6 +434,8 @@ export function createEmptyStockHeatSnapshot(message = "个股热度暂时不可
     usStockAsOfLabel: "待更新",
     aShares: [],
     usStocks: [],
+    aShareSectors: [],
+    usStockSectors: [],
   };
 }
 
@@ -316,9 +451,17 @@ export async function fetchStockHeatSnapshot({ force = false } = {}): Promise<St
   ]);
   const cached = snapshotCache?.snapshot;
   const aShares =
-    aShareResult.status === "fulfilled" ? aShareResult.value : (cached?.aShares ?? []);
+    aShareResult.status === "fulfilled" ? aShareResult.value.stocks : (cached?.aShares ?? []);
   const usStocks =
-    usStockResult.status === "fulfilled" ? usStockResult.value : (cached?.usStocks ?? []);
+    usStockResult.status === "fulfilled" ? usStockResult.value.stocks : (cached?.usStocks ?? []);
+  const aShareSectors =
+    aShareResult.status === "fulfilled"
+      ? aShareResult.value.sectors
+      : (cached?.aShareSectors ?? []);
+  const usStockSectors =
+    usStockResult.status === "fulfilled"
+      ? usStockResult.value.sectors
+      : (cached?.usStockSectors ?? []);
   const freshMarkets = Number(aShareResult.status === "fulfilled") + Number(usStockResult.status === "fulfilled");
 
   if (!aShares.length && !usStocks.length) {
@@ -357,6 +500,8 @@ export async function fetchStockHeatSnapshot({ force = false } = {}): Promise<St
     usStockAsOfLabel: latestQuoteLabel(usStocks, cached?.usStockAsOfLabel ?? "待更新"),
     aShares,
     usStocks,
+    aShareSectors,
+    usStockSectors,
   };
 
   snapshotCache = {
