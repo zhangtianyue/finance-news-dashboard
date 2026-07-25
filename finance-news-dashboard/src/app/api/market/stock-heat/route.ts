@@ -1,0 +1,18 @@
+import { NextRequest, NextResponse } from "next/server";
+import { fetchStockHeatSnapshot } from "@/lib/stock-heat";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function GET(request: NextRequest) {
+  const force = request.nextUrl.searchParams.get("refresh") === "1";
+  const snapshot = await fetchStockHeatSnapshot({ force });
+
+  return NextResponse.json(snapshot, {
+    headers: {
+      "Cache-Control": force
+        ? "no-store"
+        : "public, s-maxage=60, stale-while-revalidate=300",
+    },
+  });
+}
