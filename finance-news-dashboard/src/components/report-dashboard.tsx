@@ -37,7 +37,7 @@ import type { StockHeatItem, StockHeatSector, StockHeatSnapshot } from "@/lib/st
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
 type DashboardView = "report" | "valuation" | "qdii" | "dividends" | "polymarket" | "dca";
-type MarketHeatMode = "stocks" | "events";
+type MarketHeatMode = "stocks" | "sectors" | "events";
 type DashboardNavItem = {
   view: DashboardView;
   label: string;
@@ -587,11 +587,11 @@ function StockHeatPanel({
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
             <Flame className="size-3.5" />
-            股票市场热度
+            个股交易热度
           </div>
-          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 热度排行</h2>
+          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 个股热度</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            分市场综合成交额、量比、换手率、涨跌幅和盘中振幅，同时观察个股异动和板块聚集度。
+            分市场综合成交额、量比、换手率、涨跌幅和盘中振幅，突出交易异动最明显的个股。
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -614,10 +614,6 @@ function StockHeatPanel({
         </div>
       ) : null}
 
-      <div className="mb-4">
-        <h3 className="text-base font-semibold text-slate-950">个股热度排行</h3>
-        <p className="mt-1 text-xs leading-5 text-slate-500">A股和美股分别计算，不跨市场比较分数。</p>
-      </div>
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <StockHeatList
           title="A股热度"
@@ -632,18 +628,67 @@ function StockHeatPanel({
           asOfLabel={snapshot?.usStockAsOfLabel ?? "待更新"}
         />
       </div>
+    </section>
+  );
+}
 
-      <div className="mb-4 mt-8 flex items-center gap-3">
-        <span className="flex size-9 items-center justify-center rounded bg-slate-900 text-white">
-          <Layers3 className="size-4" />
-        </span>
+function SectorHeatPanel({
+  snapshot,
+  isLoading,
+  message,
+}: {
+  snapshot: StockHeatSnapshot | null;
+  isLoading: boolean;
+  message: string | null;
+}) {
+  const statusLabel =
+    snapshot?.status === "dynamic"
+      ? "动态更新"
+      : snapshot?.status === "partial"
+        ? "部分更新"
+        : snapshot?.status === "cached"
+          ? "上次数据"
+          : "待更新";
+  const statusClass =
+    snapshot?.status === "dynamic"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : snapshot?.status === "partial"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-slate-200 bg-white text-slate-600";
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h3 className="text-base font-semibold text-slate-950">板块热度排行</h3>
-          <p className="mt-1 text-xs leading-5 text-slate-500">
+          <div className="mb-2 inline-flex items-center gap-2 rounded bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+            <Layers3 className="size-3.5" />
+            行业板块热度
+          </div>
+          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 板块热度</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             按活跃股票样本聚合成交额、涨跌、换手、量比和上涨家数。
           </p>
         </div>
+        <div className="flex flex-col items-start gap-2 md:items-end">
+          <span
+            className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs font-semibold ${statusClass}`}
+          >
+            <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
+            {statusLabel}
+          </span>
+          <div className="font-mono text-xs text-slate-500">
+            {snapshot?.updatedAtLabel ?? "待更新"}
+          </div>
+        </div>
       </div>
+
+      {message ?? snapshot?.message ? (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <RefreshCw className={`size-4 text-emerald-600 ${isLoading ? "animate-spin" : ""}`} />
+          {message ?? snapshot?.message}
+        </div>
+      ) : null}
+
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <SectorHeatList
           title="A股热门板块"
@@ -1964,7 +2009,7 @@ export function ReportDashboard({
   useEffect(() => {
     if (
       activeView !== "polymarket" ||
-      marketHeatMode !== "stocks" ||
+      marketHeatMode === "events" ||
       stockHeatSnapshot ||
       isStockHeatLoading
     ) {
@@ -2001,7 +2046,7 @@ export function ReportDashboard({
       : activeView === "dividends"
         ? dividendSnapshot?.updatedAtLabel ?? "待更新"
         : activeView === "polymarket"
-          ? marketHeatMode === "stocks"
+          ? marketHeatMode !== "events"
             ? stockHeatSnapshot?.updatedAtLabel ?? "待更新"
             : polymarketSnapshot?.updatedAtLabel ?? "待更新"
           : activeView === "dca"
@@ -2144,23 +2189,23 @@ export function ReportDashboard({
             <button
               type="button"
               onClick={() =>
-                marketHeatMode === "stocks"
+                marketHeatMode !== "events"
                   ? refreshStockHeat(true)
                   : refreshPolymarketHotspots(true)
               }
               disabled={
-                marketHeatMode === "stocks" ? isStockHeatLoading : isPolymarketLoading
+                marketHeatMode !== "events" ? isStockHeatLoading : isPolymarketLoading
               }
               className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title={
-                marketHeatMode === "stocks"
-                  ? "重新拉取 A 股和美股个股热度"
+                marketHeatMode !== "events"
+                  ? "重新拉取 A 股和美股市场热度"
                   : "重新拉取 Polymarket 热点预测市场"
               }
             >
               <RefreshCw
                 className={`size-4 ${
-                  marketHeatMode === "stocks"
+                  marketHeatMode !== "events"
                     ? isStockHeatLoading
                       ? "animate-spin"
                       : ""
@@ -2169,10 +2214,12 @@ export function ReportDashboard({
                       : ""
                 }`}
               />
-              {marketHeatMode === "stocks"
+              {marketHeatMode !== "events"
                 ? isStockHeatLoading
                   ? "更新中"
-                  : "刷新股票"
+                  : marketHeatMode === "stocks"
+                    ? "刷新股票"
+                    : "刷新板块"
                 : isPolymarketLoading
                   ? "更新中"
                   : "刷新事件"}
@@ -2322,6 +2369,20 @@ export function ReportDashboard({
               <button
                 type="button"
                 role="tab"
+                aria-selected={marketHeatMode === "sectors"}
+                onClick={() => setMarketHeatMode("sectors")}
+                className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition-colors sm:flex-none ${
+                  marketHeatMode === "sectors"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                }`}
+              >
+                <Layers3 className="size-4" />
+                板块热度
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={marketHeatMode === "events"}
                 onClick={() => setMarketHeatMode("events")}
                 className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition-colors sm:flex-none ${
@@ -2337,6 +2398,12 @@ export function ReportDashboard({
 
             {marketHeatMode === "stocks" ? (
               <StockHeatPanel
+                snapshot={stockHeatSnapshot}
+                isLoading={isStockHeatLoading}
+                message={stockHeatMessage}
+              />
+            ) : marketHeatMode === "sectors" ? (
+              <SectorHeatPanel
                 snapshot={stockHeatSnapshot}
                 isLoading={isStockHeatLoading}
                 message={stockHeatMessage}
