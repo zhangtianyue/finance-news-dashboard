@@ -2074,6 +2074,12 @@ export function ReportDashboard({
       title: "查看开盘前财经早报",
     },
     {
+      view: "polymarket",
+      label: "市场热度",
+      icon: <Activity className="size-3.5" />,
+      title: "查看 A 股、美股和预测市场热点",
+    },
+    {
       view: "valuation",
       label: "估值雷达",
       icon: <TrendingUp className="size-3.5" />,
@@ -2090,12 +2096,6 @@ export function ReportDashboard({
       label: "A股股息",
       icon: <BadgePercent className="size-3.5" />,
       title: `查看 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`,
-    },
-    {
-      view: "polymarket",
-      label: "市场热度",
-      icon: <Activity className="size-3.5" />,
-      title: "查看 A 股、美股和预测市场热点",
     },
     {
       view: "dca",
