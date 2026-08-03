@@ -39,7 +39,7 @@ export type PolymarketHotItem = {
 export type PolymarketHotSnapshot = {
   updatedAt: string;
   updatedAtLabel: string;
-  status: "dynamic" | "empty";
+  status: "dynamic" | "cached" | "empty";
   message: string;
   sourceName: string;
   sourceUrl: string;
@@ -57,6 +57,7 @@ const hotCacheTtlMs = 90_000;
 const requestTimeoutMs = 7_000;
 
 let hotSnapshotCache: { expiresAt: number; snapshot: PolymarketHotSnapshot } | null = null;
+let hotSnapshotRefreshPromise: Promise<PolymarketHotSnapshot> | null = null;
 
 const categories: PolymarketHotCategory[] = [
   "宏观利率",
@@ -464,11 +465,7 @@ export function createEmptyPolymarketHotSnapshot(message = "Polymarket 热点暂
   };
 }
 
-export async function fetchPolymarketHotSnapshot({ force = false } = {}) {
-  if (!force && hotSnapshotCache && hotSnapshotCache.expiresAt > Date.now()) {
-    return hotSnapshotCache.snapshot;
-  }
-
+async function refreshPolymarketHotSnapshot(): Promise<PolymarketHotSnapshot> {
   const params = new URLSearchParams({
     active: "true",
     closed: "false",
@@ -535,8 +532,29 @@ export async function fetchPolymarketHotSnapshot({ force = false } = {}) {
     return snapshot;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Polymarket 更新失败";
+    if (hotSnapshotCache) {
+      return {
+        ...hotSnapshotCache.snapshot,
+        status: "cached",
+        message: `Polymarket 更新失败，正在显示上一轮数据：${message}`,
+      };
+    }
     return createEmptyPolymarketHotSnapshot(`Polymarket 更新失败：${message}`);
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+export async function fetchPolymarketHotSnapshot({ force = false } = {}) {
+  if (!force && hotSnapshotCache && hotSnapshotCache.expiresAt > Date.now()) {
+    return hotSnapshotCache.snapshot;
+  }
+  if (hotSnapshotRefreshPromise) return hotSnapshotRefreshPromise;
+
+  hotSnapshotRefreshPromise = refreshPolymarketHotSnapshot();
+  try {
+    return await hotSnapshotRefreshPromise;
+  } finally {
+    hotSnapshotRefreshPromise = null;
   }
 }

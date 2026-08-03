@@ -53,6 +53,7 @@ const dashboardViews = new Set<DashboardView>([
   "polymarket",
   "dca",
 ]);
+const marketHeatModes = new Set<MarketHeatMode>(["stocks", "sectors", "events"]);
 
 function isDashboardView(value: string | null): value is DashboardView {
   return value != null && dashboardViews.has(value as DashboardView);
@@ -65,8 +66,21 @@ function readDashboardViewFromLocation() {
   return isDashboardView(view) ? view : "report";
 }
 
+function readMarketHeatModeFromLocation() {
+  if (typeof window === "undefined") return "stocks";
+
+  const mode = new URLSearchParams(window.location.search).get("heat");
+  return mode != null && marketHeatModes.has(mode as MarketHeatMode)
+    ? (mode as MarketHeatMode)
+    : "stocks";
+}
+
 function dashboardViewHref(view: DashboardView) {
   return view === "report" ? "/" : `/?view=${view}`;
+}
+
+function marketHeatModeHref(mode: MarketHeatMode) {
+  return `/?view=polymarket&heat=${mode}`;
 }
 
 function sourceLabel(source: SourceId) {
@@ -591,7 +605,7 @@ function StockHeatPanel({
           </div>
           <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 个股热度</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            分市场综合成交额、量比、换手率、涨跌幅和盘中振幅，突出交易异动最明显的个股。
+            从成交额靠前的活跃样本中，综合量比、换手率、涨跌幅和盘中振幅，突出交易异动最明显的个股。
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -617,13 +631,13 @@ function StockHeatPanel({
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <StockHeatList
           title="A股热度"
-          caption="沪深京个股独立排名"
+          caption="沪深京成交活跃样本独立排名"
           items={snapshot?.aShares ?? []}
           asOfLabel={snapshot?.aShareAsOfLabel ?? "待更新"}
         />
         <StockHeatList
           title="美股热度"
-          caption="纽交所、纳斯达克及美交所个股"
+          caption="纽交所、纳斯达克及美交所成交活跃样本"
           items={snapshot?.usStocks ?? []}
           asOfLabel={snapshot?.usStockAsOfLabel ?? "待更新"}
         />
@@ -889,11 +903,17 @@ function PolymarketHotPanel({
             className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs font-semibold ${
               snapshot?.status === "dynamic"
                 ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-slate-200 bg-white text-slate-600"
+                : snapshot?.status === "cached"
+                  ? "border-amber-200 bg-amber-50 text-amber-700"
+                  : "border-slate-200 bg-white text-slate-600"
             }`}
           >
             <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
-            {snapshot?.status === "dynamic" ? "动态更新" : "待更新"}
+            {snapshot?.status === "dynamic"
+              ? "动态更新"
+              : snapshot?.status === "cached"
+                ? "上次数据"
+                : "待更新"}
           </span>
           <div className="font-mono text-xs text-slate-500">
             {snapshot?.updatedAtLabel ?? "待更新"}
@@ -1692,7 +1712,20 @@ export function ReportDashboard({
 
     if (typeof window === "undefined") return;
 
-    const href = dashboardViewHref(view);
+    const href =
+      view === "polymarket" ? marketHeatModeHref(marketHeatMode) : dashboardViewHref(view);
+    const currentHref = `${window.location.pathname}${window.location.search}`;
+    if (currentHref !== href) {
+      window.history.pushState(null, "", href);
+    }
+  }, [marketHeatMode]);
+
+  const switchMarketHeatMode = useCallback((mode: MarketHeatMode) => {
+    setMarketHeatMode(mode);
+
+    if (typeof window === "undefined") return;
+
+    const href = marketHeatModeHref(mode);
     const currentHref = `${window.location.pathname}${window.location.search}`;
     if (currentHref !== href) {
       window.history.pushState(null, "", href);
@@ -1903,14 +1936,12 @@ export function ReportDashboard({
     }
   }
 
-  async function refreshPolymarketHotspots(force = false) {
+  async function refreshPolymarketHotspots() {
     setIsPolymarketLoading(true);
     setPolymarketMessage("正在更新 Polymarket 热点...");
 
     try {
-      const response = await fetch(`/api/polymarket/hot${force ? "?refresh=1" : ""}`, {
-        cache: "no-store",
-      });
+      const response = await fetch("/api/polymarket/hot");
       if (!response.ok) {
         throw new Error(`Polymarket 热点更新失败：${response.status}`);
       }
@@ -1925,14 +1956,12 @@ export function ReportDashboard({
     }
   }
 
-  async function refreshStockHeat(force = false) {
+  async function refreshStockHeat() {
     setIsStockHeatLoading(true);
     setStockHeatMessage("正在更新 A 股和美股热度...");
 
     try {
-      const response = await fetch(`/api/market/stock-heat${force ? "?refresh=1" : ""}`, {
-        cache: "no-store",
-      });
+      const response = await fetch("/api/market/stock-heat");
       if (!response.ok) {
         throw new Error(`个股热度更新失败：${response.status}`);
       }
@@ -1958,6 +1987,7 @@ export function ReportDashboard({
   useEffect(() => {
     const syncViewFromUrl = () => {
       setActiveView(readDashboardViewFromLocation());
+      setMarketHeatMode(readMarketHeatModeFromLocation());
     };
 
     syncViewFromUrl();
@@ -2190,8 +2220,8 @@ export function ReportDashboard({
               type="button"
               onClick={() =>
                 marketHeatMode !== "events"
-                  ? refreshStockHeat(true)
-                  : refreshPolymarketHotspots(true)
+                  ? refreshStockHeat()
+                  : refreshPolymarketHotspots()
               }
               disabled={
                 marketHeatMode !== "events" ? isStockHeatLoading : isPolymarketLoading
@@ -2356,7 +2386,7 @@ export function ReportDashboard({
                 type="button"
                 role="tab"
                 aria-selected={marketHeatMode === "stocks"}
-                onClick={() => setMarketHeatMode("stocks")}
+                onClick={() => switchMarketHeatMode("stocks")}
                 className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition-colors sm:flex-none ${
                   marketHeatMode === "stocks"
                     ? "bg-slate-900 text-white"
@@ -2370,7 +2400,7 @@ export function ReportDashboard({
                 type="button"
                 role="tab"
                 aria-selected={marketHeatMode === "sectors"}
-                onClick={() => setMarketHeatMode("sectors")}
+                onClick={() => switchMarketHeatMode("sectors")}
                 className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition-colors sm:flex-none ${
                   marketHeatMode === "sectors"
                     ? "bg-slate-900 text-white"
@@ -2384,7 +2414,7 @@ export function ReportDashboard({
                 type="button"
                 role="tab"
                 aria-selected={marketHeatMode === "events"}
-                onClick={() => setMarketHeatMode("events")}
+                onClick={() => switchMarketHeatMode("events")}
                 className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition-colors sm:flex-none ${
                   marketHeatMode === "events"
                     ? "bg-slate-900 text-white"

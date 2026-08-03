@@ -100,7 +100,9 @@ const eastmoneyFields = [
 
 const sourceUrl = "https://quote.eastmoney.com/center/";
 const cacheTtlMs = 60_000;
+const upstreamTimeoutMs = 4_000;
 let snapshotCache: { expiresAt: number; snapshot: StockHeatSnapshot } | null = null;
+let snapshotRefreshPromise: Promise<StockHeatSnapshot> | null = null;
 
 function isRecord(value: unknown): value is RawRecord {
   return typeof value === "object" && value != null && !Array.isArray(value);
@@ -306,10 +308,7 @@ function rankSectors(candidates: RankedStockCandidate[]) {
         averageTurnoverRate: average(members.map((member) => member.turnoverRate)),
         averageVolumeRatio: average(members.map((member) => member.volumeRatio)),
         averageStockHeat:
-          members
-            .slice(0, Math.min(members.length, 5))
-            .reduce((sum, member) => sum + member.heatScore, 0) /
-          Math.min(members.length, 5),
+          members.reduce((sum, member) => sum + member.heatScore, 0) / members.length,
         memberCount: members.length,
         activeStocks: members.filter((member) => member.heatScore >= 68).length,
         risingStocks: members.filter((member) => member.changePercent > 0).length,
@@ -380,29 +379,38 @@ async function fetchEastmoneyRows(market: StockHeatMarket) {
     market === "A股"
       ? ["https://push2.eastmoney.com", "https://19.push2.eastmoney.com", "https://push2delay.eastmoney.com"]
       : ["https://push2delay.eastmoney.com", "https://19.push2.eastmoney.com", "https://push2.eastmoney.com"];
-  let lastError: unknown = null;
 
-  for (const host of hosts) {
-    try {
-      const response = await fetch(`${host}/api/qt/clist/get?${query.toString()}`, {
-        cache: "no-store",
-        headers: {
-          Accept: "application/json,text/plain,*/*",
-          Referer: "https://quote.eastmoney.com/",
-          "User-Agent": "Mozilla/5.0",
-        },
-        signal: AbortSignal.timeout(8_000),
-      });
-      if (!response.ok) throw new Error(`${market}行情接口 ${response.status}`);
-      const rows = quoteRows(await response.json());
-      if (!rows.length) throw new Error(`${market}行情返回为空`);
-      return rows;
-    } catch (error) {
-      lastError = error;
-    }
+  async function fetchFromHost(host: string) {
+    const response = await fetch(`${host}/api/qt/clist/get?${query.toString()}`, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/json,text/plain,*/*",
+        Referer: "https://quote.eastmoney.com/",
+        "User-Agent": "Mozilla/5.0",
+      },
+      signal: AbortSignal.timeout(upstreamTimeoutMs),
+    });
+    if (!response.ok) throw new Error(`${market}行情接口 ${response.status}`);
+    const rows = quoteRows(await response.json());
+    if (!rows.length) throw new Error(`${market}行情返回为空`);
+    return rows;
   }
 
-  throw lastError instanceof Error ? lastError : new Error(`${market}行情暂时不可用`);
+  try {
+    return await fetchFromHost(hosts[0]);
+  } catch (primaryError) {
+    const fallbackResults = await Promise.allSettled(hosts.slice(1).map(fetchFromHost));
+    const available = fallbackResults.find(
+      (result): result is PromiseFulfilledResult<RawRecord[]> => result.status === "fulfilled",
+    );
+    if (available) return available.value;
+
+    const fallbackError = fallbackResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    )?.reason;
+    if (fallbackError instanceof Error) throw fallbackError;
+    throw primaryError instanceof Error ? primaryError : new Error(`${market}行情暂时不可用`);
+  }
 }
 
 async function fetchMarketHeat(market: StockHeatMarket) {
@@ -439,12 +447,8 @@ export function createEmptyStockHeatSnapshot(message = "个股热度暂时不可
   };
 }
 
-export async function fetchStockHeatSnapshot({ force = false } = {}): Promise<StockHeatSnapshot> {
+async function refreshStockHeatSnapshot(): Promise<StockHeatSnapshot> {
   const now = Date.now();
-  if (!force && snapshotCache && snapshotCache.expiresAt > now) {
-    return snapshotCache.snapshot;
-  }
-
   const [aShareResult, usStockResult] = await Promise.allSettled([
     fetchMarketHeat("A股"),
     fetchMarketHeat("美股"),
@@ -509,4 +513,18 @@ export async function fetchStockHeatSnapshot({ force = false } = {}): Promise<St
     snapshot,
   };
   return snapshot;
+}
+
+export async function fetchStockHeatSnapshot({ force = false } = {}): Promise<StockHeatSnapshot> {
+  if (!force && snapshotCache && snapshotCache.expiresAt > Date.now()) {
+    return snapshotCache.snapshot;
+  }
+  if (snapshotRefreshPromise) return snapshotRefreshPromise;
+
+  snapshotRefreshPromise = refreshStockHeatSnapshot();
+  try {
+    return await snapshotRefreshPromise;
+  } finally {
+    snapshotRefreshPromise = null;
+  }
 }
