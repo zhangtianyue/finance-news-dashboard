@@ -5,6 +5,12 @@
   --foreground: #0f172a;
 }
 
+html[data-theme="dark"] {
+  --background: #0a0e13;
+  --foreground: #e7edf5;
+  color-scheme: dark;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -23,4 +29,112 @@ body {
 button,
 a {
   -webkit-tap-highlight-color: transparent;
+}
+
+.dashboard-shell {
+  color-scheme: light;
+}
+
+.dashboard-shell .finance-panel,
+.dashboard-shell .shadow-sm {
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.05), 0 8px 24px rgb(15 23 42 / 0.025);
+}
+
+.dashboard-shell[data-theme="dark"] {
+  background: #0a0e13 !important;
+  color: #e7edf5;
+  color-scheme: dark;
+}
+
+.dashboard-shell[data-theme="dark"] .workspace-header,
+.dashboard-shell[data-theme="dark"] .bg-white,
+.dashboard-shell[data-theme="dark"] .bg-white\/70 {
+  background-color: #111820 !important;
+}
+
+.dashboard-shell[data-theme="dark"] .bg-slate-50 {
+  background-color: #151d26 !important;
+}
+
+.dashboard-shell[data-theme="dark"] .bg-slate-100 {
+  background-color: #1b2530 !important;
+}
+
+.dashboard-shell[data-theme="dark"] .text-slate-950,
+.dashboard-shell[data-theme="dark"] .text-slate-900,
+.dashboard-shell[data-theme="dark"] .text-slate-800 {
+  color: #eef4fa !important;
+}
+
+.dashboard-shell[data-theme="dark"] .text-slate-700,
+.dashboard-shell[data-theme="dark"] .text-slate-600 {
+  color: #bac6d3 !important;
+}
+
+.dashboard-shell[data-theme="dark"] .text-slate-500 {
+  color: #8f9dad !important;
+}
+
+.dashboard-shell[data-theme="dark"] .text-slate-400 {
+  color: #7d8997 !important;
+}
+
+.dashboard-shell[data-theme="dark"] .border-slate-100,
+.dashboard-shell[data-theme="dark"] .border-slate-200,
+.dashboard-shell[data-theme="dark"] .border-slate-300 {
+  border-color: #293440 !important;
+}
+
+.dashboard-shell[data-theme="dark"] .divide-slate-100 > :not(:last-child),
+.dashboard-shell[data-theme="dark"] .divide-slate-200 > :not(:last-child) {
+  border-color: #293440 !important;
+}
+
+.dashboard-shell[data-theme="dark"] input,
+.dashboard-shell[data-theme="dark"] select,
+.dashboard-shell[data-theme="dark"] textarea {
+  border-color: #344150 !important;
+  background-color: #0e151d !important;
+  color: #eef4fa !important;
+}
+
+.dashboard-shell[data-theme="dark"] .bg-emerald-50 {
+  background-color: #0d2b23 !important;
+}
+
+.dashboard-shell[data-theme="dark"] .bg-red-50 {
+  background-color: #31171a !important;
+}
+
+.dashboard-shell[data-theme="dark"] .bg-amber-50 {
+  background-color: #302510 !important;
+}
+
+.dashboard-shell[data-theme="dark"] .bg-sky-50 {
+  background-color: #10283a !important;
+}
+
+.dashboard-shell[data-theme="dark"] .bg-violet-50 {
+  background-color: #251b3b !important;
+}
+
+.dashboard-shell[data-theme="dark"] .hover\:bg-slate-50:hover,
+.dashboard-shell[data-theme="dark"] .hover\:bg-white:hover {
+  background-color: #19232d !important;
+}
+
+.dashboard-shell[data-theme="dark"] .finance-panel,
+.dashboard-shell[data-theme="dark"] .shadow-sm {
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.03), 0 12px 28px rgb(0 0 0 / 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-shell *,
+  .dashboard-shell *::before,
+  .dashboard-shell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

@@ -9,12 +9,15 @@ import {
   Clock3,
   FileText,
   Flame,
+  Gauge,
   Globe2,
   Layers3,
+  Moon,
   PiggyBank,
   RefreshCw,
   Rss,
   Sparkles,
+  Sun,
   TrendingUp,
 } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
@@ -38,6 +41,7 @@ import type { StockHeatItem, StockHeatSector, StockHeatSnapshot } from "@/lib/st
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
 type DashboardView = "report" | "valuation" | "qdii" | "dividends" | "polymarket" | "dca";
 type MarketHeatMode = "stocks" | "sectors" | "events";
+type DashboardTheme = "light" | "dark";
 type DashboardNavItem = {
   view: DashboardView;
   label: string;
@@ -54,6 +58,7 @@ const dashboardViews = new Set<DashboardView>([
   "dca",
 ]);
 const marketHeatModes = new Set<MarketHeatMode>(["stocks", "sectors", "events"]);
+const dashboardThemeStorageKey = "finance-dashboard-theme";
 
 function isDashboardView(value: string | null): value is DashboardView {
   return value != null && dashboardViews.has(value as DashboardView);
@@ -73,6 +78,15 @@ function readMarketHeatModeFromLocation() {
   return mode != null && marketHeatModes.has(mode as MarketHeatMode)
     ? (mode as MarketHeatMode)
     : "stocks";
+}
+
+function readDashboardTheme() {
+  if (typeof window === "undefined") return "light";
+
+  const storedTheme = window.localStorage.getItem(dashboardThemeStorageKey);
+  if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function dashboardViewHref(view: DashboardView) {
@@ -571,6 +585,107 @@ function SectorHeatList({
   );
 }
 
+type HeatOverviewItem = {
+  name: string;
+  heatScore: number;
+  changePercent: number;
+};
+
+function HeatOverviewCard({
+  market,
+  label,
+  items,
+}: {
+  market: string;
+  label: string;
+  items: HeatOverviewItem[];
+}) {
+  const topItems = [...items].sort((a, b) => b.heatScore - a.heatScore).slice(0, 5);
+  const risingCount = items.filter((item) => item.changePercent > 0).length;
+  const fallingCount = items.filter((item) => item.changePercent < 0).length;
+  const total = Math.max(items.length, 1);
+  const risingWidth = (risingCount / total) * 100;
+  const fallingWidth = (fallingCount / total) * 100;
+
+  return (
+    <section className="finance-panel overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-3.5 sm:px-5">
+        <div>
+          <div className="text-[11px] font-semibold uppercase text-slate-500">{market}</div>
+          <h3 className="mt-1 text-sm font-semibold text-slate-950">{label}</h3>
+        </div>
+        <div className="text-right">
+          <div className="font-mono text-lg font-semibold text-slate-950">
+            {topItems[0]?.heatScore.toFixed(0) ?? "N/A"}
+          </div>
+          <div className="text-[11px] text-slate-500">最高热度</div>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 sm:px-5">
+        <div className="mb-4">
+          <div className="mb-2 flex items-center justify-between text-[11px] text-slate-500">
+            <span>上涨 {risingCount}</span>
+            <span>下跌 {fallingCount}</span>
+          </div>
+          <div className="flex h-1.5 overflow-hidden rounded-sm bg-slate-100" aria-label={`${market}涨跌广度`}>
+            <span className="bg-red-500" style={{ width: `${risingWidth}%` }} />
+            <span className="bg-emerald-500" style={{ width: `${fallingWidth}%` }} />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {topItems.length ? (
+            topItems.map((item, index) => (
+              <div key={`${market}-${item.name}`} className="grid grid-cols-[1.25rem_minmax(0,1fr)_2.5rem] items-center gap-2.5">
+                <span className="font-mono text-[11px] text-slate-400">{index + 1}</span>
+                <div className="min-w-0">
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <span className="truncate text-xs font-medium text-slate-700">{item.name}</span>
+                    <span className={`font-mono text-[11px] ${stockHeatChangeClass(item.changePercent)}`}>
+                      {item.changePercent > 0 ? "+" : ""}{item.changePercent.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
+                    <span
+                      className="block h-full bg-sky-500"
+                      style={{ width: `${Math.max(4, Math.min(100, item.heatScore))}%` }}
+                    />
+                  </div>
+                </div>
+                <span className="text-right font-mono text-xs font-semibold text-slate-700">
+                  {item.heatScore.toFixed(0)}
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="py-6 text-center text-sm text-slate-500">等待热度数据</div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MarketHeatOverview({
+  snapshot,
+  mode,
+}: {
+  snapshot: StockHeatSnapshot | null;
+  mode: Exclude<MarketHeatMode, "events">;
+}) {
+  const aShareItems = mode === "stocks" ? snapshot?.aShares ?? [] : snapshot?.aShareSectors ?? [];
+  const usItems = mode === "stocks" ? snapshot?.usStocks ?? [] : snapshot?.usStockSectors ?? [];
+  const label = mode === "stocks" ? "个股热度分布" : "板块热度分布";
+
+  return (
+    <div className="mb-5 grid gap-4 lg:grid-cols-2">
+      <HeatOverviewCard market="A SHARE" label={label} items={aShareItems} />
+      <HeatOverviewCard market="US EQUITY" label={label} items={usItems} />
+    </div>
+  );
+}
+
 function StockHeatPanel({
   snapshot,
   isLoading,
@@ -627,6 +742,8 @@ function StockHeatPanel({
           {message ?? snapshot?.message}
         </div>
       ) : null}
+
+      <MarketHeatOverview snapshot={snapshot} mode="stocks" />
 
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <StockHeatList
@@ -702,6 +819,8 @@ function SectorHeatPanel({
           {message ?? snapshot?.message}
         </div>
       ) : null}
+
+      <MarketHeatOverview snapshot={snapshot} mode="sectors" />
 
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <SectorHeatList
@@ -1677,6 +1796,7 @@ export function ReportDashboard({
   const [report, setReport] = useState(initialReport);
   const [valuations, setValuations] = useState(initialValuations);
   const [activeView, setActiveView] = useState<DashboardView>("report");
+  const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("light");
   const [hasRefreshedValuations, setHasRefreshedValuations] = useState(false);
   const [hasRefreshedQdii, setHasRefreshedQdii] = useState(false);
   const [isValuationLoading, setIsValuationLoading] = useState(false);
@@ -1739,6 +1859,15 @@ export function ReportDashboard({
     },
     [switchView],
   );
+
+  const toggleDashboardTheme = useCallback(() => {
+    setDashboardTheme((currentTheme) => {
+      const nextTheme = currentTheme === "light" ? "dark" : "light";
+      window.localStorage.setItem(dashboardThemeStorageKey, nextTheme);
+      document.documentElement.dataset.theme = nextTheme;
+      return nextTheme;
+    });
+  }, []);
 
   async function refreshReport(mode: "manual" | "auto" = "manual") {
     if (mode === "manual") {
@@ -1996,6 +2125,14 @@ export function ReportDashboard({
   }, []);
 
   useEffect(() => {
+    const preferredTheme = readDashboardTheme();
+    document.documentElement.dataset.theme = preferredTheme;
+
+    const timer = window.setTimeout(() => setDashboardTheme(preferredTheme), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (activeView !== "valuation" || hasRefreshedValuations || isValuationLoading) {
       return;
     }
@@ -2136,45 +2273,123 @@ export function ReportDashboard({
   ];
 
   return (
-    <main className="min-h-screen bg-[#eef2f5] text-slate-950">
-      <div className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-6 md:flex-row md:items-center md:justify-between lg:px-8">
-          <div>
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <div className="flex w-full flex-wrap gap-1 rounded-md border border-slate-200 bg-slate-100 p-1 sm:inline-flex sm:w-auto sm:flex-nowrap">
-                {navItems.map((item) => (
-                  <a
-                    key={item.view}
-                    href={dashboardViewHref(item.view)}
-                    onClick={handleViewLinkClick(item.view)}
-                    className={`inline-flex h-8 flex-1 basis-[7rem] items-center justify-center gap-2 whitespace-nowrap rounded px-3 text-xs font-semibold transition-colors sm:flex-none sm:basis-auto ${
-                      activeView === item.view
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "text-slate-600 hover:bg-white hover:text-slate-950"
-                    }`}
-                    title={item.title}
-                  >
-                    {item.icon}
-                    {item.label}
-                  </a>
-                ))}
-              </div>
-              <span className="inline-flex items-center gap-2 rounded border border-slate-200 px-3 py-1.5 font-mono text-xs text-slate-600">
-                <Clock3 className="size-3.5" />
-                {activeTimestamp}
-              </span>
+    <main
+      className="dashboard-shell min-h-screen bg-[#eef2f5] text-slate-950"
+      data-theme={dashboardTheme}
+    >
+      <div className="min-h-screen lg:flex">
+        <aside className="hidden h-screen w-52 shrink-0 flex-col border-r border-white/10 bg-[#0b1118] text-white lg:sticky lg:top-0 lg:flex">
+          <div className="flex h-20 items-center gap-3 border-b border-white/10 px-4">
+            <span className="flex size-9 items-center justify-center rounded-md border border-sky-400/30 bg-sky-400/10 text-sky-300">
+              <Gauge className="size-5" />
+            </span>
+            <div>
+              <div className="font-mono text-xs font-semibold text-sky-300">MARKET DESK</div>
+              <div className="mt-0.5 text-xs text-slate-400">个人市场终端</div>
             </div>
-            <h1 className="text-2xl font-semibold tracking-normal text-slate-950 md:text-4xl">
-              {activeTitle}
-            </h1>
           </div>
 
-          {activeView === "report" ? (
+          <nav className="flex-1 space-y-1 px-2.5 py-5" aria-label="主导航">
+            {navItems.map((item) => (
+              <a
+                key={item.view}
+                href={dashboardViewHref(item.view)}
+                onClick={handleViewLinkClick(item.view)}
+                className={`relative flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors ${
+                  activeView === item.view
+                    ? "bg-white/10 text-white before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:bg-sky-400"
+                    : "text-slate-400 hover:bg-white/5 hover:text-white"
+                }`}
+                title={item.title}
+              >
+                <span className={activeView === item.view ? "text-sky-300" : "text-slate-500"}>
+                  {item.icon}
+                </span>
+                {item.label}
+              </a>
+            ))}
+          </nav>
+
+          <div className="border-t border-white/10 p-3">
+            <div className="mb-3 flex items-center gap-2 px-2 text-xs text-slate-400">
+              <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" />
+              数据工作台
+            </div>
+            <button
+              type="button"
+              onClick={toggleDashboardTheme}
+              className="flex h-9 w-full items-center justify-between rounded-md border border-white/10 px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
+              title={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
+            >
+              <span>{dashboardTheme === "dark" ? "浅色模式" : "深色模式"}</span>
+              {dashboardTheme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </button>
+          </div>
+        </aside>
+
+        <div className="min-w-0 flex-1">
+          <header className="border-b border-slate-200 bg-white lg:hidden">
+            <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex size-8 items-center justify-center rounded-md bg-slate-950 text-sky-300">
+                  <Gauge className="size-4" />
+                </span>
+                <div>
+                  <div className="font-mono text-[11px] font-semibold text-slate-950">MARKET DESK</div>
+                  <div className="text-[10px] text-slate-500">个人市场终端</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={toggleDashboardTheme}
+                className="flex size-9 items-center justify-center rounded-md border border-slate-200 text-slate-600"
+                title={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
+              >
+                {dashboardTheme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              </button>
+            </div>
+            <nav className="grid grid-cols-3 gap-1 border-t border-slate-200 bg-slate-50 p-2" aria-label="主导航">
+              {navItems.map((item) => (
+                <a
+                  key={item.view}
+                  href={dashboardViewHref(item.view)}
+                  onClick={handleViewLinkClick(item.view)}
+                  className={`inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded px-2 text-[11px] font-semibold transition-colors ${
+                    activeView === item.view
+                      ? "bg-slate-950 text-white"
+                      : "text-slate-600 hover:bg-white hover:text-slate-950"
+                  }`}
+                  title={item.title}
+                >
+                  {item.icon}
+                  <span className="truncate">{item.label}</span>
+                </a>
+              ))}
+            </nav>
+          </header>
+
+          <div className="workspace-header border-b border-slate-200 bg-white">
+            <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-5 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+              <div>
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
+                  <span className="font-mono text-sky-600">MARKET / {navItems.find((item) => item.view === activeView)?.label}</span>
+                  <span className="h-3 w-px bg-slate-300" />
+                  <span className="inline-flex items-center gap-1.5 font-mono font-normal">
+                    <Clock3 className="size-3.5" />
+                    {activeTimestamp}
+                  </span>
+                </div>
+                <h1 className="text-2xl font-semibold tracking-normal text-slate-950 md:text-3xl">
+                  {activeTitle}
+                </h1>
+              </div>
+
+              {activeView === "report" ? (
             <button
               type="button"
               onClick={() => refreshReport("manual")}
               disabled={isRefreshing}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title="重新抓取三路新闻源并生成最新早报"
             >
               <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
@@ -2185,7 +2400,7 @@ export function ReportDashboard({
               type="button"
               onClick={() => refreshValuations(true)}
               disabled={isValuationLoading}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title="重新拉取全球指数估值数据"
             >
               <RefreshCw className={`size-4 ${isValuationLoading ? "animate-spin" : ""}`} />
@@ -2196,7 +2411,7 @@ export function ReportDashboard({
               type="button"
               onClick={refreshQdiiQuotes}
               disabled={isQdiiLoading}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title="重新拉取 QDII 价格、估算净值和溢价率"
             >
               <RefreshCw
@@ -2209,7 +2424,7 @@ export function ReportDashboard({
               type="button"
               onClick={() => refreshDividendStocks(true)}
               disabled={isDividendLoading}
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title={`重新拉取 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`}
             >
               <RefreshCw className={`size-4 ${isDividendLoading ? "animate-spin" : ""}`} />
@@ -2226,7 +2441,7 @@ export function ReportDashboard({
               disabled={
                 marketHeatMode !== "events" ? isStockHeatLoading : isPolymarketLoading
               }
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
               title={
                 marketHeatMode !== "events"
                   ? "重新拉取 A 股和美股市场热度"
@@ -2254,11 +2469,11 @@ export function ReportDashboard({
                   ? "更新中"
                   : "刷新事件"}
             </button>
-          ) : null}
-        </div>
-      </div>
+              ) : null}
+            </div>
+          </div>
 
-      <div className="mx-auto max-w-7xl px-5 py-6 lg:px-8">
+          <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
         {activeView === "report" && error ? (
           <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
@@ -2387,7 +2602,7 @@ export function ReportDashboard({
                 role="tab"
                 aria-selected={marketHeatMode === "stocks"}
                 onClick={() => switchMarketHeatMode("stocks")}
-                className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition-colors sm:flex-none ${
+                className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
                   marketHeatMode === "stocks"
                     ? "bg-slate-900 text-white"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
@@ -2401,7 +2616,7 @@ export function ReportDashboard({
                 role="tab"
                 aria-selected={marketHeatMode === "sectors"}
                 onClick={() => switchMarketHeatMode("sectors")}
-                className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition-colors sm:flex-none ${
+                className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
                   marketHeatMode === "sectors"
                     ? "bg-slate-900 text-white"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
@@ -2415,7 +2630,7 @@ export function ReportDashboard({
                 role="tab"
                 aria-selected={marketHeatMode === "events"}
                 onClick={() => switchMarketHeatMode("events")}
-                className={`inline-flex h-9 flex-1 items-center justify-center gap-2 rounded px-4 text-sm font-semibold transition-colors sm:flex-none ${
+                className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
                   marketHeatMode === "events"
                     ? "bg-slate-900 text-white"
                     : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
@@ -2449,6 +2664,8 @@ export function ReportDashboard({
         ) : (
           <DcaBacktestPanel />
         )}
+          </div>
+        </div>
       </div>
     </main>
   );
