@@ -1860,14 +1860,15 @@ export function ReportDashboard({
     [switchView],
   );
 
-  const toggleDashboardTheme = useCallback(() => {
-    setDashboardTheme((currentTheme) => {
-      const nextTheme = currentTheme === "light" ? "dark" : "light";
-      window.localStorage.setItem(dashboardThemeStorageKey, nextTheme);
-      document.documentElement.dataset.theme = nextTheme;
-      return nextTheme;
-    });
+  const selectDashboardTheme = useCallback((nextTheme: DashboardTheme) => {
+    setDashboardTheme(nextTheme);
+    window.localStorage.setItem(dashboardThemeStorageKey, nextTheme);
+    document.documentElement.dataset.theme = nextTheme;
   }, []);
+
+  const toggleDashboardTheme = useCallback(() => {
+    selectDashboardTheme(dashboardTheme === "light" ? "dark" : "light");
+  }, [dashboardTheme, selectDashboardTheme]);
 
   async function refreshReport(mode: "manual" | "auto" = "manual") {
     if (mode === "manual") {
@@ -2315,15 +2316,38 @@ export function ReportDashboard({
               <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" />
               数据工作台
             </div>
-            <button
-              type="button"
-              onClick={toggleDashboardTheme}
-              className="flex h-9 w-full items-center justify-between rounded-md border border-white/10 px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
-              title={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
+            <div
+              className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-black/20 p-1"
+              role="group"
+              aria-label="外观模式"
             >
-              <span>{dashboardTheme === "dark" ? "浅色模式" : "深色模式"}</span>
-              {dashboardTheme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </button>
+              <button
+                type="button"
+                onClick={() => selectDashboardTheme("light")}
+                aria-pressed={dashboardTheme === "light"}
+                className={`inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors ${
+                  dashboardTheme === "light"
+                    ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30"
+                    : "text-slate-400 hover:bg-white/5 hover:text-white"
+                }`}
+              >
+                <Sun className="size-3.5" />
+                浅色
+              </button>
+              <button
+                type="button"
+                onClick={() => selectDashboardTheme("dark")}
+                aria-pressed={dashboardTheme === "dark"}
+                className={`inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors ${
+                  dashboardTheme === "dark"
+                    ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30"
+                    : "text-slate-400 hover:bg-white/5 hover:text-white"
+                }`}
+              >
+                <Moon className="size-3.5" />
+                深色
+              </button>
+            </div>
           </div>
         </aside>
 
