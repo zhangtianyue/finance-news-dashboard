@@ -848,9 +848,9 @@ function panoramaColor(changePercent: number) {
 
 function PanoramaTile({ item, rect }: { item: StockHeatItem; rect: TreemapRect }) {
   const area = rect.width * rect.height;
-  const showChange = area >= 24 && rect.width >= 4 && rect.height >= 5;
-  const showName = area >= 46 && rect.width >= 6 && rect.height >= 9;
-  const showCode = area >= 115 && rect.width >= 10 && rect.height >= 12;
+  const showChange = area >= 36 && rect.width >= 5 && rect.height >= 6;
+  const showName = area >= 78 && rect.width >= 8 && rect.height >= 11;
+  const showCode = area >= 170 && rect.width >= 12 && rect.height >= 15;
   const changeLabel = `${item.changePercent > 0 ? "+" : ""}${item.changePercent.toFixed(2)}%`;
 
   return (
@@ -888,6 +888,41 @@ function PanoramaTile({ item, rect }: { item: StockHeatItem; rect: TreemapRect }
   );
 }
 
+function MobilePanoramaSector({
+  market,
+  sector,
+}: {
+  market: "A股" | "美股";
+  sector: PanoramaSector;
+}) {
+  const visibleItems = sector.items.slice(0, 2);
+  const visibleAmount = visibleItems.reduce((sum, item) => sum + Math.max(item.amount, 0), 0);
+  const minimumReadableWeight = visibleAmount * 0.3;
+  const stockLayout = binaryTreemap(
+    visibleItems.map((item) => ({
+      item,
+      weight: Math.max(item.amount, minimumReadableWeight),
+    })),
+  );
+  const amountLabel = market === "A股" ? formatAmount(sector.amount) : formatUsdAmount(sector.amount);
+
+  return (
+    <section className="overflow-hidden border border-slate-700 bg-slate-900">
+      <div className="flex h-7 items-center justify-between gap-2 border-b border-white/15 bg-slate-950 px-2 text-[10px] font-semibold text-white">
+        <span className="truncate">{sector.name}</span>
+        <span className="shrink-0 font-mono text-white/60">
+          前{visibleItems.length}/{sector.items.length}只 · {amountLabel}
+        </span>
+      </div>
+      <div className="relative h-24">
+        {stockLayout.map(({ item, rect }) => (
+          <PanoramaTile key={`${market}-mobile-${item.code}`} item={item} rect={rect} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function PanoramaCard({
   market,
   items,
@@ -922,14 +957,40 @@ function PanoramaCard({
         </div>
       </div>
 
-      <div className="relative h-[390px] bg-slate-950 sm:h-[430px]">
+      <div className="space-y-0.5 bg-slate-950 p-0.5 sm:hidden">
+        {sectors.length ? (
+          sectors.map((sector) => (
+            <MobilePanoramaSector key={`${market}-mobile-${sector.name}`} market={market} sector={sector} />
+          ))
+        ) : (
+          <div className="flex h-48 items-center justify-center text-sm text-slate-400">
+            等待全景行情数据
+          </div>
+        )}
+      </div>
+
+      <div className="relative hidden h-[500px] bg-slate-950 sm:block">
         {sectorLayout.length ? (
           sectorLayout.map(({ item: sector, rect }) => {
-            const visibleItems = sector.items.slice(0, 5);
-            const stockLayout = binaryTreemap(
-              visibleItems.map((item) => ({ item, weight: item.amount })),
-            );
             const sectorArea = rect.width * rect.height;
+            const visibleItemLimit = sectorArea >= 900 ? 3 : sectorArea >= 260 ? 2 : 1;
+            const visibleItems = sector.items.slice(0, visibleItemLimit);
+            const visibleAmount = visibleItems.reduce(
+              (sum, item) => sum + Math.max(item.amount, 0),
+              0,
+            );
+            const minimumReadableWeight =
+              visibleItems.length === 3
+                ? visibleAmount * 0.2
+                : visibleItems.length === 2
+                  ? visibleAmount * 0.3
+                  : 0;
+            const stockLayout = binaryTreemap(
+              visibleItems.map((item) => ({
+                item,
+                weight: Math.max(item.amount, minimumReadableWeight),
+              })),
+            );
             return (
               <section
                 key={`${market}-${sector.name}`}
@@ -967,7 +1028,7 @@ function PanoramaCard({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-2.5 text-[11px] text-slate-500">
-        <span>面积代表成交额 · 颜色代表涨跌幅 · 按行业分组</span>
+        <span>面积反映成交额 · 极小块适度放大 · 颜色代表涨跌幅</span>
         <span className="flex items-center gap-1.5">
           <i className="size-2.5 bg-emerald-600" /> 跌
           <i className="ml-1 size-2.5 bg-slate-500" /> 平
