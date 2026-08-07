@@ -87,7 +87,7 @@ function todayInputValue() {
 }
 
 function defaultStartDate() {
-  return "2019-01-01";
+  return "2015-01-01";
 }
 
 function resolveSymbol(rawTicker: string) {

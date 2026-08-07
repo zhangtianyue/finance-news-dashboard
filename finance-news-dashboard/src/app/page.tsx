@@ -22,7 +22,12 @@ const dashboardViews = new Set<DashboardView>([
   "polymarket",
   "dca",
 ]);
-const marketHeatModes = new Set<MarketHeatMode>(["stocks", "sectors", "events"]);
+const marketHeatModes = new Set<MarketHeatMode>([
+  "stocks",
+  "sectors",
+  "panorama",
+  "events",
+]);
 
 function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;

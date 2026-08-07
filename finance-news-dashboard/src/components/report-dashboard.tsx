@@ -10,6 +10,7 @@ import {
   Flame,
   Gauge,
   Globe2,
+  LayoutGrid,
   Layers3,
   Moon,
   PiggyBank,
@@ -46,7 +47,7 @@ export type DashboardView =
   | "dividends"
   | "polymarket"
   | "dca";
-export type MarketHeatMode = "stocks" | "sectors" | "events";
+export type MarketHeatMode = "stocks" | "sectors" | "panorama" | "events";
 type DashboardTheme = "light" | "dark";
 type DashboardNavItem = {
   view: DashboardView;
@@ -63,7 +64,12 @@ const dashboardViews = new Set<DashboardView>([
   "polymarket",
   "dca",
 ]);
-const marketHeatModes = new Set<MarketHeatMode>(["stocks", "sectors", "events"]);
+const marketHeatModes = new Set<MarketHeatMode>([
+  "stocks",
+  "sectors",
+  "panorama",
+  "events",
+]);
 const dashboardThemeStorageKey = "finance-dashboard-theme";
 
 function isDashboardView(value: string | null): value is DashboardView {
@@ -1114,6 +1120,78 @@ function MarketSectorPanorama({ snapshot }: { snapshot: StockHeatSnapshot | null
   );
 }
 
+function PanoramaHeatPanel({
+  snapshot,
+  isLoading,
+  message,
+}: {
+  snapshot: StockHeatSnapshot | null;
+  isLoading: boolean;
+  message: string | null;
+}) {
+  const statusLabel =
+    snapshot?.status === "dynamic"
+      ? "动态更新"
+      : snapshot?.status === "partial"
+        ? "部分更新"
+        : snapshot?.status === "cached"
+          ? "上次数据"
+          : "待更新";
+  const statusClass =
+    snapshot?.status === "dynamic"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : snapshot?.status === "partial"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-slate-200 bg-white text-slate-600";
+
+  return (
+    <section>
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="mb-2 inline-flex items-center gap-2 rounded bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+            <LayoutGrid className="size-3.5" />
+            市场全景热图
+          </div>
+          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 个股与板块全景</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+            个股图按行业组织活跃股票，板块图聚合行业资金热度；面积代表成交额，颜色代表涨跌幅。
+          </p>
+        </div>
+        <div className="flex flex-col items-start gap-2 md:items-end">
+          <span
+            className={`inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs font-semibold ${statusClass}`}
+          >
+            <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} />
+            {statusLabel}
+          </span>
+          <div className="font-mono text-xs text-slate-500">
+            {snapshot?.updatedAtLabel ?? "待更新"}
+          </div>
+        </div>
+      </div>
+
+      {message ?? snapshot?.message ? (
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+          <RefreshCw className={`size-4 text-emerald-600 ${isLoading ? "animate-spin" : ""}`} />
+          {message ?? snapshot?.message}
+        </div>
+      ) : null}
+
+      <div className="mb-3">
+        <h3 className="text-sm font-semibold text-slate-950">个股成交全景</h3>
+        <p className="mt-1 text-xs text-slate-500">展示成交活跃股票，并按所属行业分组。</p>
+      </div>
+      <MarketPanorama snapshot={snapshot} />
+
+      <div className="mb-3 mt-7">
+        <h3 className="text-sm font-semibold text-slate-950">板块资金全景</h3>
+        <p className="mt-1 text-xs text-slate-500">展示行业成交权重、涨跌方向与板块内部广度。</p>
+      </div>
+      <MarketSectorPanorama snapshot={snapshot} />
+    </section>
+  );
+}
+
 function StockHeatPanel({
   snapshot,
   isLoading,
@@ -1146,9 +1224,9 @@ function StockHeatPanel({
             <Flame className="size-3.5" />
             个股交易热度
           </div>
-          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 市场全景与个股热度</h2>
+          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 个股热度排行</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            全景图展示成交额靠前的活跃样本，下面的榜单综合量比、换手率、涨跌幅和盘中振幅突出交易异动。
+            综合量比、换手率、涨跌幅和盘中振幅，突出当前交易异动最明显的股票。
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -1170,8 +1248,6 @@ function StockHeatPanel({
           {message ?? snapshot?.message}
         </div>
       ) : null}
-
-      <MarketPanorama snapshot={snapshot} />
 
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <StockHeatList
@@ -1223,7 +1299,7 @@ function SectorHeatPanel({
             <Layers3 className="size-3.5" />
             行业板块热度
           </div>
-          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 板块热度</h2>
+          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 板块热度排行</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             按活跃股票样本聚合成交额、涨跌、换手、量比和上涨家数。
           </p>
@@ -1247,8 +1323,6 @@ function SectorHeatPanel({
           {message ?? snapshot?.message}
         </div>
       ) : null}
-
-      <MarketSectorPanorama snapshot={snapshot} />
 
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <SectorHeatList
@@ -2834,7 +2908,9 @@ export function ReportDashboard({
                       ? "更新中"
                       : marketHeatMode === "stocks"
                         ? "刷新股票"
-                        : "刷新板块"
+                        : marketHeatMode === "sectors"
+                          ? "刷新板块"
+                          : "刷新全景"
                     : isPolymarketLoading
                       ? "更新中"
                       : "刷新事件"}
@@ -2943,7 +3019,7 @@ export function ReportDashboard({
         ) : activeView === "polymarket" ? (
           <>
             <div
-              className="mb-5 inline-flex w-full rounded-md border border-slate-200 bg-white p-1 shadow-sm sm:w-auto"
+              className="mb-5 grid w-full grid-cols-2 rounded-md border border-slate-200 bg-white p-1 shadow-sm sm:inline-flex sm:w-auto"
               role="tablist"
               aria-label="市场热度类型"
             >
@@ -2978,6 +3054,20 @@ export function ReportDashboard({
               <button
                 type="button"
                 role="tab"
+                aria-selected={marketHeatMode === "panorama"}
+                onClick={() => switchMarketHeatMode("panorama")}
+                className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
+                  marketHeatMode === "panorama"
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                }`}
+              >
+                <LayoutGrid className="size-4" />
+                全景热图
+              </button>
+              <button
+                type="button"
+                role="tab"
                 aria-selected={marketHeatMode === "events"}
                 onClick={() => switchMarketHeatMode("events")}
                 className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
@@ -2999,6 +3089,12 @@ export function ReportDashboard({
               />
             ) : marketHeatMode === "sectors" ? (
               <SectorHeatPanel
+                snapshot={stockHeatSnapshot}
+                isLoading={isStockHeatLoading}
+                message={stockHeatMessage}
+              />
+            ) : marketHeatMode === "panorama" ? (
+              <PanoramaHeatPanel
                 snapshot={stockHeatSnapshot}
                 isLoading={isStockHeatLoading}
                 message={stockHeatMessage}
