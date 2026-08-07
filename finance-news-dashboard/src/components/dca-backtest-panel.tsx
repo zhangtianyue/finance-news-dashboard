@@ -1,7 +1,13 @@
 "use client";
 
-import { ArrowDownToLine, Play, RefreshCw } from "lucide-react";
-import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
+import { ArrowDownToLine, Check, ChevronDown, Play, RefreshCw, Search } from "lucide-react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  popularInstruments,
+  searchPopularInstruments,
+  type InstrumentOption,
+} from "@/lib/instrument-catalog";
 
 type DcaFrequency = "monthly" | "weekly" | "daily";
 type PriceSource = "remote" | "csv";
@@ -37,6 +43,7 @@ type DcaSeriesPoint = {
 
 type DcaResult = {
   symbol: string;
+  instrumentName: string | null;
   priceCount: number;
   firstDate: Date;
   lastDate: Date;
@@ -149,7 +156,12 @@ async function readCsvPrices(file: File | null) {
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 }
 
-function runDcaBacktest(prices: PricePoint[], settings: DcaSettings, symbol: string): DcaResult {
+function runDcaBacktest(
+  prices: PricePoint[],
+  settings: DcaSettings,
+  symbol: string,
+  instrumentName: string | null,
+): DcaResult {
   let shares = 0;
   let invested = 0;
   let nextBuyDate = stripTime(settings.startDate);
@@ -209,6 +221,7 @@ function runDcaBacktest(prices: PricePoint[], settings: DcaSettings, symbol: str
 
   return {
     symbol,
+    instrumentName,
     priceCount: prices.length,
     firstDate,
     lastDate,
@@ -588,9 +601,190 @@ function DatePartsSelect({
   );
 }
 
+function InstrumentCombobox({
+  value,
+  selected,
+  onValueChange,
+  onSelect,
+}: {
+  value: string;
+  selected: InstrumentOption | null;
+  onValueChange: (value: string) => void;
+  onSelect: (instrument: InstrumentOption) => void;
+}) {
+  const [options, setOptions] = useState<InstrumentOption[]>(() =>
+    searchPopularInstruments(value).slice(0, 12),
+  );
+  const [isOpen, setIsOpen] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  useEffect(() => {
+    const query = value.trim();
+    const localMatches = searchPopularInstruments(query).slice(0, 12);
+    const controller = new AbortController();
+
+    if (!query) {
+      const resetTimer = window.setTimeout(() => {
+        setOptions(popularInstruments.slice(0, 12));
+        setActiveIndex(0);
+        setIsSearching(false);
+      }, 0);
+      return () => {
+        window.clearTimeout(resetTimer);
+        controller.abort();
+      };
+    }
+
+    const timer = window.setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const response = await fetch(`/api/symbols/search?q=${encodeURIComponent(query)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`代码搜索失败：${response.status}`);
+        const payload = (await response.json()) as { items?: InstrumentOption[] };
+        setOptions(payload.items?.length ? payload.items : localMatches);
+      } catch (error) {
+        if (!(error instanceof Error && error.name === "AbortError")) {
+          setOptions(localMatches);
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsSearching(false);
+      }
+      setActiveIndex(0);
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [value]);
+
+  function choose(instrument: InstrumentOption) {
+    onSelect(instrument);
+    setOptions([instrument]);
+    setActiveIndex(0);
+    setIsOpen(false);
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setIsOpen(true);
+      setActiveIndex((index) => Math.min(index + 1, Math.max(options.length - 1, 0)));
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setIsOpen(true);
+      setActiveIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === "Enter" && isOpen && options[activeIndex]) {
+      event.preventDefault();
+      choose(options[activeIndex]);
+    } else if (event.key === "Escape") {
+      setIsOpen(false);
+    }
+  }
+
+  const isConfirmed = selected?.symbol === resolveSymbol(value);
+
+  return (
+    <div className="grid gap-1.5">
+      <div id="instrument-label" className="text-xs font-semibold text-slate-600">
+        股票或 ETF
+      </div>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-400" />
+        <input
+          value={value}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            onValueChange(nextValue);
+            setOptions(searchPopularInstruments(nextValue).slice(0, 12));
+            setActiveIndex(0);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
+          onKeyDown={handleKeyDown}
+          className="h-10 w-full rounded-md border border-slate-300 bg-white pl-9 pr-9 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
+          placeholder="输入代码或公司名称"
+          autoComplete="off"
+          role="combobox"
+          aria-labelledby="instrument-label"
+          aria-controls="instrument-options"
+          aria-expanded={isOpen}
+          aria-autocomplete="list"
+        />
+        {isSearching ? (
+          <RefreshCw className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-slate-400" />
+        ) : (
+          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+        )}
+
+        {isOpen ? (
+          <div
+            id="instrument-options"
+            role="listbox"
+            className="absolute left-0 right-0 top-[calc(100%+0.375rem)] z-30 max-h-72 overflow-y-auto rounded-md border border-slate-200 bg-white p-1.5 shadow-xl"
+          >
+            {options.length ? (
+              options.map((option, index) => (
+                <button
+                  key={option.symbol}
+                  type="button"
+                  role="option"
+                  aria-selected={selected?.symbol === option.symbol}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => choose(option)}
+                  className={`flex w-full items-center gap-3 rounded px-2.5 py-2 text-left transition-colors ${
+                    activeIndex === index ? "bg-slate-100" : "hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="w-20 shrink-0 font-mono text-sm font-semibold text-slate-950">
+                    {option.symbol}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-slate-900">{option.name}</div>
+                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-500">
+                      <span>{option.exchange}</span>
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5">{option.type}</span>
+                    </div>
+                  </div>
+                  {selected?.symbol === option.symbol ? (
+                    <Check className="size-4 shrink-0 text-emerald-600" />
+                  ) : null}
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-4 text-center text-xs text-slate-500">暂无匹配标的</div>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      <div className="flex min-h-5 items-center gap-2 text-xs">
+        {isConfirmed ? (
+          <>
+            <Check className="size-3.5 text-emerald-600" />
+            <span className="truncate font-medium text-slate-700">{selected.name}</span>
+            <span className="shrink-0 text-slate-400">{selected.exchange}</span>
+          </>
+        ) : (
+          <span className="text-slate-500">名称待确认</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ticker, setTicker] = useState("SPY");
+  const [selectedInstrument, setSelectedInstrument] = useState<InstrumentOption | null>(
+    popularInstruments[0],
+  );
   const [startDate, setStartDate] = useState(defaultStartDate);
   const [endDate, setEndDate] = useState(todayInputValue);
   const [frequency, setFrequency] = useState<DcaFrequency>("monthly");
@@ -659,7 +853,9 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
         throw new Error("有效价格数据不足，请调长日期范围或换一个代码。");
       }
 
-      const nextResult = runDcaBacktest(filteredPrices, settings, symbol);
+      const instrumentName =
+        selectedInstrument?.symbol === symbol ? selectedInstrument.name : null;
+      const nextResult = runDcaBacktest(filteredPrices, settings, symbol, instrumentName);
       setResult(nextResult);
       setStatus(
         `完成：${formatDateInput(nextResult.firstDate)} 至 ${formatDateInput(
@@ -699,7 +895,11 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
   }
 
   const recentTrades = result?.trades.slice(-12).reverse() ?? [];
-  const currentSymbol = result?.symbol ?? (resolveSymbol(ticker) || "N/A");
+  const inputSymbol = resolveSymbol(ticker) || "N/A";
+  const inputInstrumentName =
+    selectedInstrument?.symbol === inputSymbol ? selectedInstrument.name : null;
+  const resultSymbol = result?.symbol ?? inputSymbol;
+  const resultInstrumentName = result ? result.instrumentName : inputInstrumentName;
   const dateRangeLabel = `${startDate || "N/A"} 至 ${endDate || "N/A"}`;
   const planLabel = `${frequencyLabels[frequency]} / ${formatMoney(Number(amount) || 0)}`;
   const sourceLabel = source === "remote" ? "在线价格" : "CSV";
@@ -708,7 +908,10 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
     <section className="space-y-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap gap-2">
-          <DetailBadge label="标的" value={currentSymbol} />
+          <DetailBadge
+            label="标的"
+            value={inputInstrumentName ? `${inputSymbol} · ${inputInstrumentName}` : inputSymbol}
+          />
           <DetailBadge label="区间" value={dateRangeLabel} />
           <DetailBadge label="计划" value={planLabel} />
           <DetailBadge label="来源" value={sourceLabel} />
@@ -730,8 +933,11 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
             <div className="text-xs font-semibold text-slate-300">DCA CONTROL</div>
             <div className="mt-2 flex min-w-0 items-center justify-between gap-3">
               <div className="min-w-0">
-                <div className="font-mono text-2xl font-semibold">{currentSymbol}</div>
-                <div className="mt-1 truncate text-xs text-slate-400">{dateRangeLabel}</div>
+                <div className="font-mono text-2xl font-semibold">{inputSymbol}</div>
+                <div className="mt-1 truncate text-xs text-slate-300">
+                  {inputInstrumentName ?? "名称待确认"}
+                </div>
+                <div className="mt-0.5 truncate text-[11px] text-slate-500">{dateRangeLabel}</div>
               </div>
               <button
                 type="submit"
@@ -750,15 +956,20 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
           </div>
 
           <ControlSection title="标的与区间">
-            <FieldLabel label="股票代码">
-              <input
-                value={ticker}
-                onChange={(event) => setTicker(event.target.value)}
-                className="h-9 rounded-md border border-slate-300 px-3 text-sm font-medium text-slate-950 outline-none focus:border-slate-500"
-                placeholder="SPY、QQQ、AAPL"
-                autoComplete="off"
-              />
-            </FieldLabel>
+            <InstrumentCombobox
+              value={ticker}
+              selected={selectedInstrument}
+              onValueChange={(value) => {
+                setTicker(value);
+                if (selectedInstrument?.symbol !== resolveSymbol(value)) {
+                  setSelectedInstrument(null);
+                }
+              }}
+              onSelect={(instrument) => {
+                setTicker(instrument.symbol);
+                setSelectedInstrument(instrument);
+              }}
+            />
 
             <div className="grid gap-3">
               <FieldLabel label="开始日期">
@@ -876,8 +1087,11 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
                 <div className="text-xs font-medium text-slate-500">资产路径</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <span className="font-mono text-lg font-semibold text-slate-950">
-                    {currentSymbol}
+                    {resultSymbol}
                   </span>
+                  {resultInstrumentName ? (
+                    <span className="text-sm font-medium text-slate-700">{resultInstrumentName}</span>
+                  ) : null}
                   <span className="rounded border border-slate-200 px-2 py-1 text-xs text-slate-500">
                     {dateRangeLabel}
                   </span>
@@ -903,7 +1117,7 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
                     <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-center shadow-sm">
                       <div className="text-sm font-semibold text-slate-950">等待回测</div>
                       <div className="mt-1 text-xs text-slate-500">
-                        {currentSymbol} / {frequencyLabels[frequency]}
+                        {inputSymbol} / {frequencyLabels[frequency]}
                       </div>
                     </div>
                   </div>
