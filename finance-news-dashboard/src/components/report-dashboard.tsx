@@ -812,10 +812,10 @@ function groupPanoramaSectors(items: StockHeatItem[]) {
     }))
     .sort((left, right) => right.amount - left.amount);
 
-  if (sectors.length <= 9) return sectors;
-  const primary = sectors.slice(0, 8);
+  if (sectors.length <= 7) return sectors;
+  const primary = sectors.slice(0, 6);
   const remainderItems = sectors
-    .slice(8)
+    .slice(6)
     .flatMap((sector) => sector.items)
     .sort((left, right) => right.amount - left.amount);
 
@@ -842,6 +842,7 @@ function panoramaColor(changePercent: number) {
 
 function PanoramaTile({ item, rect }: { item: StockHeatItem; rect: TreemapRect }) {
   const area = rect.width * rect.height;
+  const showChange = area >= 24 && rect.width >= 4 && rect.height >= 5;
   const showName = area >= 46 && rect.width >= 6 && rect.height >= 9;
   const showCode = area >= 115 && rect.width >= 10 && rect.height >= 12;
   const changeLabel = `${item.changePercent > 0 ? "+" : ""}${item.changePercent.toFixed(2)}%`;
@@ -871,9 +872,11 @@ function PanoramaTile({ item, rect }: { item: StockHeatItem; rect: TreemapRect }
             {item.code}
           </div>
         ) : null}
-        <div className={`${showName ? "mt-1" : ""} font-mono text-[10px] font-semibold`}>
-          {changeLabel}
-        </div>
+        {showChange ? (
+          <div className={`${showName ? "mt-1" : ""} font-mono text-[10px] font-semibold`}>
+            {changeLabel}
+          </div>
+        ) : null}
       </div>
     </a>
   );
@@ -916,8 +919,9 @@ function PanoramaCard({
       <div className="relative h-[390px] bg-slate-950 sm:h-[430px]">
         {sectorLayout.length ? (
           sectorLayout.map(({ item: sector, rect }) => {
+            const visibleItems = sector.items.slice(0, 5);
             const stockLayout = binaryTreemap(
-              sector.items.map((item) => ({ item, weight: item.amount })),
+              visibleItems.map((item) => ({ item, weight: item.amount })),
             );
             const sectorArea = rect.width * rect.height;
             return (
@@ -934,7 +938,11 @@ function PanoramaCard({
                 <div className="flex h-6 items-center justify-between gap-2 border-b border-white/15 bg-slate-950/90 px-2 text-[10px] font-semibold text-white">
                   <span className="truncate">{sector.name}</span>
                   {sectorArea >= 470 ? (
-                    <span className="shrink-0 font-mono text-white/55">{sector.items.length}只</span>
+                    <span className="shrink-0 font-mono text-white/55">
+                      {visibleItems.length < sector.items.length
+                        ? `前${visibleItems.length}/${sector.items.length}只`
+                        : `${sector.items.length}只`}
+                    </span>
                   ) : null}
                 </div>
                 <div className="absolute inset-x-0 bottom-0 top-6">
@@ -966,7 +974,7 @@ function PanoramaCard({
 
 function MarketPanorama({ snapshot }: { snapshot: StockHeatSnapshot | null }) {
   return (
-    <div className="mb-5 grid gap-4 xl:grid-cols-2">
+    <div className="mb-5 grid gap-4 2xl:grid-cols-2">
       <PanoramaCard
         market="A股"
         items={snapshot?.aSharePanorama ?? []}
@@ -981,103 +989,127 @@ function MarketPanorama({ snapshot }: { snapshot: StockHeatSnapshot | null }) {
   );
 }
 
-type HeatOverviewItem = {
-  name: string;
-  heatScore: number;
-  changePercent: number;
-};
-
-function HeatOverviewCard({
-  market,
-  label,
-  items,
+function SectorPanoramaTile({
+  sector,
+  rect,
 }: {
-  market: string;
-  label: string;
-  items: HeatOverviewItem[];
+  sector: StockHeatSector;
+  rect: TreemapRect;
 }) {
-  const topItems = [...items].sort((a, b) => b.heatScore - a.heatScore).slice(0, 5);
-  const risingCount = items.filter((item) => item.changePercent > 0).length;
-  const fallingCount = items.filter((item) => item.changePercent < 0).length;
-  const total = Math.max(items.length, 1);
-  const risingWidth = (risingCount / total) * 100;
-  const fallingWidth = (fallingCount / total) * 100;
+  const area = rect.width * rect.height;
+  const showBreadth = area >= 190 && rect.width >= 12 && rect.height >= 16;
+  const showLeader = area >= 320 && rect.width >= 16 && rect.height >= 22;
+  const changeLabel = `${sector.changePercent > 0 ? "+" : ""}${sector.changePercent.toFixed(2)}%`;
 
   return (
-    <section className="finance-panel overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-3.5 sm:px-5">
-        <div>
-          <div className="text-[11px] font-semibold uppercase text-slate-500">{market}</div>
-          <h3 className="mt-1 text-sm font-semibold text-slate-950">{label}</h3>
-        </div>
-        <div className="text-right">
-          <div className="font-mono text-lg font-semibold text-slate-950">
-            {topItems[0]?.heatScore.toFixed(0) ?? "N/A"}
+    <a
+      href={sector.leaderUrl}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`${sector.name} ${changeLabel}，龙头 ${sector.leaderName}`}
+      title={`${sector.name}\n成交加权涨跌 ${changeLabel}\n成交额 ${formatSectorHeatAmount(sector)}\n上涨 ${sector.risingStocks} / 下跌 ${sector.fallingStocks}\n龙头 ${sector.leaderName} ${sector.leaderChangePercent > 0 ? "+" : ""}${sector.leaderChangePercent.toFixed(2)}%`}
+      className="absolute overflow-hidden border border-slate-950/55 p-2 text-white transition-[filter] hover:z-10 hover:brightness-110 focus:z-10 focus:outline-none focus:ring-2 focus:ring-white"
+      style={{
+        left: `${rect.x}%`,
+        top: `${rect.y}%`,
+        width: `${rect.width}%`,
+        height: `${rect.height}%`,
+        backgroundColor: panoramaColor(sector.changePercent),
+      }}
+    >
+      <div className="flex h-full min-w-0 flex-col items-center justify-center text-center leading-tight">
+        <div className="line-clamp-2 max-w-full text-xs font-semibold sm:text-sm">{sector.name}</div>
+        <div className="mt-1 font-mono text-xs font-semibold">{changeLabel}</div>
+        {showBreadth ? (
+          <div className="mt-1.5 font-mono text-[10px] text-white/75">
+            涨 {sector.risingStocks} · 跌 {sector.fallingStocks}
           </div>
-          <div className="text-[11px] text-slate-500">最高热度</div>
+        ) : null}
+        {showLeader ? (
+          <div className="mt-1.5 flex max-w-full items-center gap-1 text-[10px] text-white/75">
+            <span className="truncate">{sector.leaderName}</span>
+            <span className="shrink-0 font-mono">
+              {sector.leaderChangePercent > 0 ? "+" : ""}
+              {sector.leaderChangePercent.toFixed(1)}%
+            </span>
+            <ArrowUpRight className="size-2.5 shrink-0" />
+          </div>
+        ) : null}
+      </div>
+    </a>
+  );
+}
+
+function SectorPanoramaCard({
+  market,
+  sectors,
+  asOfLabel,
+}: {
+  market: "A股" | "美股";
+  sectors: StockHeatSector[];
+  asOfLabel: string;
+}) {
+  const layout = binaryTreemap(
+    [...sectors]
+      .sort((left, right) => right.amount - left.amount)
+      .map((sector) => ({ item: sector, weight: sector.amount })),
+  );
+  const risingSectors = sectors.filter((sector) => sector.changePercent > 0).length;
+  const fallingSectors = sectors.filter((sector) => sector.changePercent < 0).length;
+
+  return (
+    <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase text-slate-500">
+            {market === "A股" ? "A SHARE SECTORS" : "US EQUITY SECTORS"}
+          </div>
+          <h3 className="mt-1 text-sm font-semibold text-slate-950">{market}板块全景</h3>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          <span className="font-mono text-slate-500">{asOfLabel}</span>
+          <span className="font-mono text-red-600">涨 {risingSectors}</span>
+          <span className="font-mono text-emerald-700">跌 {fallingSectors}</span>
         </div>
       </div>
 
-      <div className="px-4 py-4 sm:px-5">
-        <div className="mb-4">
-          <div className="mb-2 flex items-center justify-between text-[11px] text-slate-500">
-            <span>上涨 {risingCount}</span>
-            <span>下跌 {fallingCount}</span>
+      <div className="relative h-[330px] bg-slate-950 sm:h-[370px]">
+        {layout.length ? (
+          layout.map(({ item: sector, rect }) => (
+            <SectorPanoramaTile key={`${market}-${sector.name}`} sector={sector} rect={rect} />
+          ))
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-slate-400">
+            等待板块行情数据
           </div>
-          <div className="flex h-1.5 overflow-hidden rounded-sm bg-slate-100" aria-label={`${market}涨跌广度`}>
-            <span className="bg-red-500" style={{ width: `${risingWidth}%` }} />
-            <span className="bg-emerald-500" style={{ width: `${fallingWidth}%` }} />
-          </div>
-        </div>
+        )}
+      </div>
 
-        <div className="space-y-3">
-          {topItems.length ? (
-            topItems.map((item, index) => (
-              <div key={`${market}-${item.name}`} className="grid grid-cols-[1.25rem_minmax(0,1fr)_2.5rem] items-center gap-2.5">
-                <span className="font-mono text-[11px] text-slate-400">{index + 1}</span>
-                <div className="min-w-0">
-                  <div className="mb-1 flex items-center justify-between gap-3">
-                    <span className="truncate text-xs font-medium text-slate-700">{item.name}</span>
-                    <span className={`font-mono text-[11px] ${stockHeatChangeClass(item.changePercent)}`}>
-                      {item.changePercent > 0 ? "+" : ""}{item.changePercent.toFixed(2)}%
-                    </span>
-                  </div>
-                  <div className="h-1 overflow-hidden rounded-sm bg-slate-100">
-                    <span
-                      className="block h-full bg-sky-500"
-                      style={{ width: `${Math.max(4, Math.min(100, item.heatScore))}%` }}
-                    />
-                  </div>
-                </div>
-                <span className="text-right font-mono text-xs font-semibold text-slate-700">
-                  {item.heatScore.toFixed(0)}
-                </span>
-              </div>
-            ))
-          ) : (
-            <div className="py-6 text-center text-sm text-slate-500">等待热度数据</div>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-2.5 text-[11px] text-slate-500">
+        <span>面积代表板块成交额 · 颜色代表成交加权涨跌幅</span>
+        <span className="flex items-center gap-1.5">
+          <i className="size-2.5 bg-emerald-600" /> 跌
+          <i className="ml-1 size-2.5 bg-slate-500" /> 平
+          <i className="ml-1 size-2.5 bg-red-600" /> 涨
+        </span>
       </div>
     </section>
   );
 }
 
-function MarketHeatOverview({
-  snapshot,
-  mode,
-}: {
-  snapshot: StockHeatSnapshot | null;
-  mode: Exclude<MarketHeatMode, "events">;
-}) {
-  const aShareItems = mode === "stocks" ? snapshot?.aShares ?? [] : snapshot?.aShareSectors ?? [];
-  const usItems = mode === "stocks" ? snapshot?.usStocks ?? [] : snapshot?.usStockSectors ?? [];
-  const label = mode === "stocks" ? "个股热度分布" : "板块热度分布";
-
+function MarketSectorPanorama({ snapshot }: { snapshot: StockHeatSnapshot | null }) {
   return (
-    <div className="mb-5 grid gap-4 lg:grid-cols-2">
-      <HeatOverviewCard market="A SHARE" label={label} items={aShareItems} />
-      <HeatOverviewCard market="US EQUITY" label={label} items={usItems} />
+    <div className="mb-5 grid gap-4 xl:grid-cols-2">
+      <SectorPanoramaCard
+        market="A股"
+        sectors={snapshot?.aShareSectors ?? []}
+        asOfLabel={snapshot?.aShareAsOfLabel ?? "待更新"}
+      />
+      <SectorPanoramaCard
+        market="美股"
+        sectors={snapshot?.usStockSectors ?? []}
+        asOfLabel={snapshot?.usStockAsOfLabel ?? "待更新"}
+      />
     </div>
   );
 }
@@ -1216,7 +1248,7 @@ function SectorHeatPanel({
         </div>
       ) : null}
 
-      <MarketHeatOverview snapshot={snapshot} mode="sectors" />
+      <MarketSectorPanorama snapshot={snapshot} />
 
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <SectorHeatList
