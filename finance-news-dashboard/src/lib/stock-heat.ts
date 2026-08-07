@@ -52,6 +52,8 @@ export type StockHeatSnapshot = {
   usStockAsOfLabel: string;
   aShares: StockHeatItem[];
   usStocks: StockHeatItem[];
+  aSharePanorama: StockHeatItem[];
+  usStockPanorama: StockHeatItem[];
   aShareSectors: StockHeatSector[];
   usStockSectors: StockHeatSector[];
 };
@@ -246,10 +248,8 @@ function scoreCandidates(candidates: StockHeatCandidate[]) {
     .sort((left, right) => right.heatScore - left.heatScore || right.amount - left.amount);
 }
 
-function rankCandidates(candidates: RankedStockCandidate[]) {
-  return candidates
-    .slice(0, 10)
-    .map<StockHeatItem>((candidate, index) => ({
+function toStockHeatItems(candidates: RankedStockCandidate[]) {
+  return candidates.map<StockHeatItem>((candidate, index) => ({
       market: candidate.market,
       rank: index + 1,
       code: candidate.code,
@@ -268,6 +268,16 @@ function rankCandidates(candidates: RankedStockCandidate[]) {
       quoteTimeLabel: shanghaiDateTimeFromSeconds(candidate.quoteTimestamp),
       quoteUrl: `https://quote.eastmoney.com/unify/r/${candidate.marketId}.${candidate.code}`,
     }));
+}
+
+function rankCandidates(candidates: RankedStockCandidate[]) {
+  return toStockHeatItems(candidates.slice(0, 10));
+}
+
+function panoramaCandidates(candidates: RankedStockCandidate[]) {
+  return toStockHeatItems(
+    [...candidates].sort((left, right) => right.amount - left.amount).slice(0, 60),
+  );
 }
 
 function average(values: Array<number | null>) {
@@ -422,6 +432,7 @@ async function fetchMarketHeat(market: StockHeatMarket) {
   const rankedCandidates = scoreCandidates(candidates);
   return {
     stocks: rankCandidates(rankedCandidates),
+    panorama: panoramaCandidates(rankedCandidates),
     sectors: rankSectors(rankedCandidates),
   };
 }
@@ -442,6 +453,8 @@ export function createEmptyStockHeatSnapshot(message = "个股热度暂时不可
     usStockAsOfLabel: "待更新",
     aShares: [],
     usStocks: [],
+    aSharePanorama: [],
+    usStockPanorama: [],
     aShareSectors: [],
     usStockSectors: [],
   };
@@ -458,6 +471,14 @@ async function refreshStockHeatSnapshot(): Promise<StockHeatSnapshot> {
     aShareResult.status === "fulfilled" ? aShareResult.value.stocks : (cached?.aShares ?? []);
   const usStocks =
     usStockResult.status === "fulfilled" ? usStockResult.value.stocks : (cached?.usStocks ?? []);
+  const aSharePanorama =
+    aShareResult.status === "fulfilled"
+      ? aShareResult.value.panorama
+      : (cached?.aSharePanorama ?? cached?.aShares ?? []);
+  const usStockPanorama =
+    usStockResult.status === "fulfilled"
+      ? usStockResult.value.panorama
+      : (cached?.usStockPanorama ?? cached?.usStocks ?? []);
   const aShareSectors =
     aShareResult.status === "fulfilled"
       ? aShareResult.value.sectors
@@ -480,7 +501,7 @@ async function refreshStockHeatSnapshot(): Promise<StockHeatSnapshot> {
     freshMarkets === 2 ? "dynamic" : freshMarkets === 1 ? "partial" : ("cached" as const);
   const message =
     status === "dynamic"
-      ? `已更新 A 股 ${aShares.length} 只、美股 ${usStocks.length} 只热门股票。`
+      ? `已更新 A 股 ${aSharePanorama.length} 只、美股 ${usStockPanorama.length} 只成交全景样本和热榜。`
       : status === "partial"
         ? "部分市场更新失败，已保留上一轮可用榜单。"
         : "实时更新失败，正在显示上一轮榜单。";
@@ -504,6 +525,8 @@ async function refreshStockHeatSnapshot(): Promise<StockHeatSnapshot> {
     usStockAsOfLabel: latestQuoteLabel(usStocks, cached?.usStockAsOfLabel ?? "待更新"),
     aShares,
     usStocks,
+    aSharePanorama,
+    usStockPanorama,
     aShareSectors,
     usStockSectors,
   };

@@ -725,6 +725,262 @@ function SectorHeatList({
   );
 }
 
+type TreemapRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type PanoramaSector = {
+  name: string;
+  amount: number;
+  items: StockHeatItem[];
+};
+
+function binaryTreemap<T>(
+  entries: Array<{ item: T; weight: number }>,
+  rect: TreemapRect = { x: 0, y: 0, width: 100, height: 100 },
+): Array<{ item: T; rect: TreemapRect }> {
+  if (!entries.length) return [];
+  if (entries.length === 1) return [{ item: entries[0].item, rect }];
+
+  const totalWeight = entries.reduce((sum, entry) => sum + Math.max(entry.weight, 0), 0);
+  if (totalWeight <= 0) {
+    return entries.map((entry, index) => ({
+      item: entry.item,
+      rect: {
+        x: rect.x + (rect.width / entries.length) * index,
+        y: rect.y,
+        width: rect.width / entries.length,
+        height: rect.height,
+      },
+    }));
+  }
+
+  let splitIndex = 1;
+  let firstWeight = Math.max(entries[0].weight, 0);
+  while (
+    splitIndex < entries.length - 1 &&
+    firstWeight + Math.max(entries[splitIndex].weight, 0) <= totalWeight / 2
+  ) {
+    firstWeight += Math.max(entries[splitIndex].weight, 0);
+    splitIndex += 1;
+  }
+
+  const ratio = Math.max(0.05, Math.min(0.95, firstWeight / totalWeight));
+  const firstEntries = entries.slice(0, splitIndex);
+  const secondEntries = entries.slice(splitIndex);
+
+  if (rect.width >= rect.height) {
+    const firstWidth = rect.width * ratio;
+    return [
+      ...binaryTreemap(firstEntries, { ...rect, width: firstWidth }),
+      ...binaryTreemap(secondEntries, {
+        x: rect.x + firstWidth,
+        y: rect.y,
+        width: rect.width - firstWidth,
+        height: rect.height,
+      }),
+    ];
+  }
+
+  const firstHeight = rect.height * ratio;
+  return [
+    ...binaryTreemap(firstEntries, { ...rect, height: firstHeight }),
+    ...binaryTreemap(secondEntries, {
+      x: rect.x,
+      y: rect.y + firstHeight,
+      width: rect.width,
+      height: rect.height - firstHeight,
+    }),
+  ];
+}
+
+function groupPanoramaSectors(items: StockHeatItem[]) {
+  const groups = new Map<string, StockHeatItem[]>();
+  for (const item of items) {
+    const industry = item.industry && item.industry !== "-" ? item.industry : "其他";
+    groups.set(industry, [...(groups.get(industry) ?? []), item]);
+  }
+
+  const sectors = [...groups.entries()]
+    .map<PanoramaSector>(([name, members]) => ({
+      name,
+      amount: members.reduce((sum, member) => sum + member.amount, 0),
+      items: [...members].sort((left, right) => right.amount - left.amount),
+    }))
+    .sort((left, right) => right.amount - left.amount);
+
+  if (sectors.length <= 9) return sectors;
+  const primary = sectors.slice(0, 8);
+  const remainderItems = sectors
+    .slice(8)
+    .flatMap((sector) => sector.items)
+    .sort((left, right) => right.amount - left.amount);
+
+  return [
+    ...primary,
+    {
+      name: "其他行业",
+      amount: remainderItems.reduce((sum, item) => sum + item.amount, 0),
+      items: remainderItems,
+    },
+  ];
+}
+
+function panoramaColor(changePercent: number) {
+  const strength = Math.min(Math.abs(changePercent) / 10, 1);
+  if (changePercent > 0) {
+    return `rgb(${Math.round(150 + strength * 70)} ${Math.round(45 - strength * 16)} ${Math.round(45 - strength * 14)})`;
+  }
+  if (changePercent < 0) {
+    return `rgb(${Math.round(12 - strength * 7)} ${Math.round(105 + strength * 45)} ${Math.round(78 + strength * 27)})`;
+  }
+  return "rgb(71 85 105)";
+}
+
+function PanoramaTile({ item, rect }: { item: StockHeatItem; rect: TreemapRect }) {
+  const area = rect.width * rect.height;
+  const showName = area >= 46 && rect.width >= 6 && rect.height >= 9;
+  const showCode = area >= 115 && rect.width >= 10 && rect.height >= 12;
+  const changeLabel = `${item.changePercent > 0 ? "+" : ""}${item.changePercent.toFixed(2)}%`;
+
+  return (
+    <a
+      href={item.quoteUrl}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`${item.name} ${changeLabel}，成交额 ${formatStockHeatAmount(item)}`}
+      title={`${item.name} (${item.code})\n${item.industry} · ${changeLabel}\n成交额 ${formatStockHeatAmount(item)}`}
+      className="absolute overflow-hidden border border-slate-950/50 p-1 text-white transition-[filter] hover:z-10 hover:brightness-110 focus:z-10 focus:outline-none focus:ring-2 focus:ring-white"
+      style={{
+        left: `${rect.x}%`,
+        top: `${rect.y}%`,
+        width: `${rect.width}%`,
+        height: `${rect.height}%`,
+        backgroundColor: panoramaColor(item.changePercent),
+      }}
+    >
+      <div className="flex h-full min-w-0 flex-col items-center justify-center text-center leading-tight">
+        {showName ? (
+          <div className="line-clamp-2 max-w-full text-[11px] font-semibold">{item.name}</div>
+        ) : null}
+        {showCode ? (
+          <div className="mt-0.5 max-w-full truncate font-mono text-[9px] text-white/70">
+            {item.code}
+          </div>
+        ) : null}
+        <div className={`${showName ? "mt-1" : ""} font-mono text-[10px] font-semibold`}>
+          {changeLabel}
+        </div>
+      </div>
+    </a>
+  );
+}
+
+function PanoramaCard({
+  market,
+  items,
+  asOfLabel,
+}: {
+  market: "A股" | "美股";
+  items: StockHeatItem[];
+  asOfLabel: string;
+}) {
+  const sectors = groupPanoramaSectors(items);
+  const sectorLayout = binaryTreemap(
+    sectors.map((sector) => ({ item: sector, weight: sector.amount })),
+  );
+  const risingCount = items.filter((item) => item.changePercent > 0).length;
+  const fallingCount = items.filter((item) => item.changePercent < 0).length;
+  const unchangedCount = items.length - risingCount - fallingCount;
+
+  return (
+    <section className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase text-slate-500">
+            {market === "A股" ? "A SHARE PANORAMA" : "US EQUITY PANORAMA"}
+          </div>
+          <h3 className="mt-1 text-sm font-semibold text-slate-950">{market}成交全景</h3>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          <span className="font-mono text-slate-500">{asOfLabel}</span>
+          <span className="font-mono text-red-600">涨 {risingCount}</span>
+          <span className="font-mono text-emerald-700">跌 {fallingCount}</span>
+          {unchangedCount ? <span className="font-mono text-slate-500">平 {unchangedCount}</span> : null}
+        </div>
+      </div>
+
+      <div className="relative h-[390px] bg-slate-950 sm:h-[430px]">
+        {sectorLayout.length ? (
+          sectorLayout.map(({ item: sector, rect }) => {
+            const stockLayout = binaryTreemap(
+              sector.items.map((item) => ({ item, weight: item.amount })),
+            );
+            const sectorArea = rect.width * rect.height;
+            return (
+              <section
+                key={`${market}-${sector.name}`}
+                className="absolute overflow-hidden border border-slate-300/50 bg-slate-900"
+                style={{
+                  left: `${rect.x}%`,
+                  top: `${rect.y}%`,
+                  width: `${rect.width}%`,
+                  height: `${rect.height}%`,
+                }}
+              >
+                <div className="flex h-6 items-center justify-between gap-2 border-b border-white/15 bg-slate-950/90 px-2 text-[10px] font-semibold text-white">
+                  <span className="truncate">{sector.name}</span>
+                  {sectorArea >= 470 ? (
+                    <span className="shrink-0 font-mono text-white/55">{sector.items.length}只</span>
+                  ) : null}
+                </div>
+                <div className="absolute inset-x-0 bottom-0 top-6">
+                  {stockLayout.map(({ item, rect: stockRect }) => (
+                    <PanoramaTile key={`${market}-${item.code}`} item={item} rect={stockRect} />
+                  ))}
+                </div>
+              </section>
+            );
+          })
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-slate-400">
+            等待全景行情数据
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-2.5 text-[11px] text-slate-500">
+        <span>面积代表成交额 · 颜色代表涨跌幅 · 按行业分组</span>
+        <span className="flex items-center gap-1.5">
+          <i className="size-2.5 bg-emerald-600" /> 跌
+          <i className="ml-1 size-2.5 bg-slate-500" /> 平
+          <i className="ml-1 size-2.5 bg-red-600" /> 涨
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function MarketPanorama({ snapshot }: { snapshot: StockHeatSnapshot | null }) {
+  return (
+    <div className="mb-5 grid gap-4 xl:grid-cols-2">
+      <PanoramaCard
+        market="A股"
+        items={snapshot?.aSharePanorama ?? []}
+        asOfLabel={snapshot?.aShareAsOfLabel ?? "待更新"}
+      />
+      <PanoramaCard
+        market="美股"
+        items={snapshot?.usStockPanorama ?? []}
+        asOfLabel={snapshot?.usStockAsOfLabel ?? "待更新"}
+      />
+    </div>
+  );
+}
+
 type HeatOverviewItem = {
   name: string;
   heatScore: number;
@@ -858,9 +1114,9 @@ function StockHeatPanel({
             <Flame className="size-3.5" />
             个股交易热度
           </div>
-          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 个股热度</h2>
+          <h2 className="text-xl font-semibold text-slate-950">A股 / 美股 市场全景与个股热度</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            从成交额靠前的活跃样本中，综合量比、换手率、涨跌幅和盘中振幅，突出交易异动最明显的个股。
+            全景图展示成交额靠前的活跃样本，下面的榜单综合量比、换手率、涨跌幅和盘中振幅突出交易异动。
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -883,7 +1139,7 @@ function StockHeatPanel({
         </div>
       ) : null}
 
-      <MarketHeatOverview snapshot={snapshot} mode="stocks" />
+      <MarketPanorama snapshot={snapshot} />
 
       <div className="grid items-start gap-5 lg:grid-cols-2">
         <StockHeatList
