@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateMorningReport } from "@/lib/news-report";
+import { refreshLatestReport } from "@/lib/news-report";
 
 function isAuthorized(request: NextRequest) {
+  if (process.env.NODE_ENV !== "production") return true;
+
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-
   const auth = request.headers.get("authorization");
-  const querySecret = request.nextUrl.searchParams.get("secret");
+  if (secret) return auth === `Bearer ${secret}`;
 
-  return auth === `Bearer ${secret}` || querySecret === secret;
+  return request.headers.get("user-agent")?.includes("vercel-cron/1.0") ?? false;
 }
 
 export async function GET(request: NextRequest) {
@@ -16,12 +16,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const report = await generateMorningReport();
-  return NextResponse.json(report, {
-    headers: {
-      "Cache-Control": "no-store",
-    },
-  });
+  try {
+    const report = await refreshLatestReport();
+    return NextResponse.json(report, {
+      headers: {
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "早报更新失败";
+    return NextResponse.json({ error: message }, { status: 503 });
+  }
 }
 
 export async function POST(request: NextRequest) {

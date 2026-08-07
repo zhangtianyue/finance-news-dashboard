@@ -21,7 +21,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   GlobalValuationSnapshot,
   IndexValuation,
@@ -124,7 +124,7 @@ function sourceLabel(source: SourceId) {
   return {
     cls: "财联社",
     wallstreetcn: "华尔街见闻",
-    xueqiu: "雪球热榜",
+    xueqiu: "雪球个股热度",
   }[source];
 }
 
@@ -1824,7 +1824,6 @@ export function ReportDashboard({
   const [valuations, setValuations] = useState(initialValuations);
   const [activeView, setActiveView] = useState<DashboardView>(initialView);
   const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("light");
-  const hasAutoRefreshedReport = useRef(false);
   const [hasRefreshedValuations, setHasRefreshedValuations] = useState(false);
   const [hasRefreshedQdii, setHasRefreshedQdii] = useState(false);
   const [isValuationLoading, setIsValuationLoading] = useState(false);
@@ -1847,8 +1846,6 @@ export function ReportDashboard({
   const [isPolymarketLoading, setIsPolymarketLoading] = useState(false);
   const [polymarketMessage, setPolymarketMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
-  const [autoRefreshMessage, setAutoRefreshMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const totalItems = useMemo(
@@ -1900,41 +1897,24 @@ export function ReportDashboard({
     selectDashboardTheme(dashboardTheme === "light" ? "dark" : "light");
   }, [dashboardTheme, selectDashboardTheme]);
 
-  async function refreshReport(mode: "manual" | "auto" = "manual") {
-    if (mode === "manual") {
-      setIsRefreshing(true);
-      setError(null);
-      setAutoRefreshMessage(null);
-    } else {
-      setIsAutoRefreshing(true);
-      setAutoRefreshMessage("正在后台更新早报...");
-    }
+  async function refreshReport() {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    setError(null);
 
     try {
-      const response = await fetch("/api/reports/generate", {
-        method: "POST",
+      const response = await fetch("/api/reports/latest?refresh=1", {
         cache: "no-store",
       });
       if (!response.ok) {
         throw new Error(`刷新失败：${response.status}`);
       }
       setReport((await response.json()) as MorningReport);
-      if (mode === "auto") {
-        setAutoRefreshMessage("已自动更新到最新早报");
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "刷新失败";
-      if (mode === "manual") {
-        setError(message);
-      } else {
-        setAutoRefreshMessage(`自动更新失败，已显示本地缓存：${message}`);
-      }
+      setError(`${message}，已保留当前早报`);
     } finally {
-      if (mode === "manual") {
-        setIsRefreshing(false);
-      } else {
-        setIsAutoRefreshing(false);
-      }
+      setIsRefreshing(false);
     }
   }
 
@@ -2135,17 +2115,6 @@ export function ReportDashboard({
       setIsStockHeatLoading(false);
     }
   }
-
-  useEffect(() => {
-    if (activeView !== "report" || hasAutoRefreshedReport.current) return;
-    hasAutoRefreshedReport.current = true;
-
-    const timer = window.setTimeout(() => {
-      void refreshReport("auto");
-    }, 0);
-
-    return () => window.clearTimeout(timer);
-  }, [activeView]);
 
   useEffect(() => {
     const syncViewFromUrl = () => {
@@ -2430,115 +2399,113 @@ export function ReportDashboard({
               </div>
 
               {activeView === "report" ? (
-            <button
-              type="button"
-              onClick={() => refreshReport("manual")}
-              disabled={isRefreshing}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              title="重新抓取三路新闻源并生成最新早报"
-            >
-              <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
-              {isRefreshing ? "刷新中" : "刷新早报"}
-            </button>
-          ) : activeView === "valuation" ? (
-            <button
-              type="button"
-              onClick={() => refreshValuations(true)}
-              disabled={isValuationLoading}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              title="重新拉取全球指数估值数据"
-            >
-              <RefreshCw className={`size-4 ${isValuationLoading ? "animate-spin" : ""}`} />
-              {isValuationLoading ? "更新中" : "刷新估值"}
-            </button>
-          ) : activeView === "qdii" ? (
-            <button
-              type="button"
-              onClick={refreshQdiiQuotes}
-              disabled={isQdiiLoading}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              title="重新拉取 QDII 价格、估算净值和溢价率"
-            >
-              <RefreshCw
-                className={`size-4 ${isQdiiLoading ? "animate-spin" : ""}`}
-              />
-              {isQdiiLoading ? "更新中" : "刷新 QDII"}
-            </button>
-          ) : activeView === "dividends" ? (
-            <button
-              type="button"
-              onClick={() => refreshDividendStocks(true)}
-              disabled={isDividendLoading}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              title={`重新拉取 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`}
-            >
-              <RefreshCw className={`size-4 ${isDividendLoading ? "animate-spin" : ""}`} />
-              {isDividendLoading ? "更新中" : "刷新股息"}
-            </button>
-          ) : activeView === "polymarket" ? (
-            <button
-              type="button"
-              onClick={() =>
-                marketHeatMode !== "events"
-                  ? refreshStockHeat()
-                  : refreshPolymarketHotspots()
-              }
-              disabled={
-                marketHeatMode !== "events" ? isStockHeatLoading : isPolymarketLoading
-              }
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-              title={
-                marketHeatMode !== "events"
-                  ? "重新拉取 A 股和美股市场热度"
-                  : "重新拉取 Polymarket 热点预测市场"
-              }
-            >
-              <RefreshCw
-                className={`size-4 ${
-                  marketHeatMode !== "events"
+                <button
+                  type="button"
+                  onClick={refreshReport}
+                  disabled={isRefreshing}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  title="重新抓取三路新闻源并生成最新早报"
+                >
+                  <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
+                  {isRefreshing ? "刷新中" : "刷新早报"}
+                </button>
+              ) : activeView === "valuation" ? (
+                <button
+                  type="button"
+                  onClick={() => refreshValuations(true)}
+                  disabled={isValuationLoading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  title="重新拉取全球指数估值数据"
+                >
+                  <RefreshCw className={`size-4 ${isValuationLoading ? "animate-spin" : ""}`} />
+                  {isValuationLoading ? "更新中" : "刷新估值"}
+                </button>
+              ) : activeView === "qdii" ? (
+                <button
+                  type="button"
+                  onClick={refreshQdiiQuotes}
+                  disabled={isQdiiLoading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  title="重新拉取 QDII 价格、估算净值和溢价率"
+                >
+                  <RefreshCw
+                    className={`size-4 ${isQdiiLoading ? "animate-spin" : ""}`}
+                  />
+                  {isQdiiLoading ? "更新中" : "刷新 QDII"}
+                </button>
+              ) : activeView === "dividends" ? (
+                <button
+                  type="button"
+                  onClick={() => refreshDividendStocks(true)}
+                  disabled={isDividendLoading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  title={`重新拉取 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司`}
+                >
+                  <RefreshCw className={`size-4 ${isDividendLoading ? "animate-spin" : ""}`} />
+                  {isDividendLoading ? "更新中" : "刷新股息"}
+                </button>
+              ) : activeView === "polymarket" ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    marketHeatMode !== "events"
+                      ? refreshStockHeat()
+                      : refreshPolymarketHotspots()
+                  }
+                  disabled={
+                    marketHeatMode !== "events" ? isStockHeatLoading : isPolymarketLoading
+                  }
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  title={
+                    marketHeatMode !== "events"
+                      ? "重新拉取 A 股和美股市场热度"
+                      : "重新拉取 Polymarket 热点预测市场"
+                  }
+                >
+                  <RefreshCw
+                    className={`size-4 ${
+                      marketHeatMode !== "events"
+                        ? isStockHeatLoading
+                          ? "animate-spin"
+                          : ""
+                        : isPolymarketLoading
+                          ? "animate-spin"
+                          : ""
+                    }`}
+                  />
+                  {marketHeatMode !== "events"
                     ? isStockHeatLoading
-                      ? "animate-spin"
-                      : ""
+                      ? "更新中"
+                      : marketHeatMode === "stocks"
+                        ? "刷新股票"
+                        : "刷新板块"
                     : isPolymarketLoading
-                      ? "animate-spin"
-                      : ""
-                }`}
-              />
-              {marketHeatMode !== "events"
-                ? isStockHeatLoading
-                  ? "更新中"
-                  : marketHeatMode === "stocks"
-                    ? "刷新股票"
-                    : "刷新板块"
-                : isPolymarketLoading
-                  ? "更新中"
-                  : "刷新事件"}
-            </button>
+                      ? "更新中"
+                      : "刷新事件"}
+                </button>
               ) : null}
             </div>
           </div>
 
           <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
-        {activeView === "report" && error ? (
-          <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </div>
-        ) : null}
+            {activeView === "report" && error ? (
+              <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
 
-        {activeView === "report" && autoRefreshMessage ? (
-          <div className="mb-5 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
-            <RefreshCw
-              className={`size-4 text-emerald-600 ${isAutoRefreshing ? "animate-spin" : ""}`}
-            />
-            {autoRefreshMessage}
-          </div>
-        ) : null}
+            {activeView === "report" && report.refreshNotice ? (
+              <div className="mb-5 flex items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+                <RefreshCw className="size-4 text-emerald-600" />
+                {report.refreshNotice}
+              </div>
+            ) : null}
 
         {activeView === "report" ? (
           <>
             <div className="mb-6 grid gap-3 md:grid-cols-4">
               <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="text-xs font-medium text-slate-500">新闻条目</div>
+                <div className="text-xs font-medium text-slate-500">热点条目</div>
                 <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
                   {totalItems}
                 </div>

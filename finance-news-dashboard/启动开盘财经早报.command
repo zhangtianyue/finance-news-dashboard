@@ -4,7 +4,7 @@
 # 目标：
 # 1. 进入 finance-news-dashboard 项目目录。
 # 2. 确保本地 Next.js 服务已经启动。
-# 3. 调用 /api/reports/generate 生成最新开盘财经早报。
+# 3. 调用 /api/reports/generate 生成最新盘前财经早报。
 # 4. 自动打开网页，方便直接查看早报。
 
 PROJECT_DIR="/Users/zhangtianyue/Documents/金融/finance-news-dashboard"
@@ -22,7 +22,7 @@ cd "$PROJECT_DIR" || {
 
 mkdir -p "$RUNTIME_DIR"
 
-echo "开盘财经早报启动器"
+echo "盘前财经早报启动器"
 echo "项目目录：$PROJECT_DIR"
 echo "本地地址：$BASE_URL"
 echo
