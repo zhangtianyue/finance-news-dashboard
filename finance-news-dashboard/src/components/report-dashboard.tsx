@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowUpRight,
   BadgePercent,
-  CheckCircle2,
   Clock3,
   FileText,
   Flame,
@@ -21,7 +20,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type {
   GlobalValuationSnapshot,
   IndexValuation,
@@ -1966,11 +1965,6 @@ export function ReportDashboard({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const totalItems = useMemo(
-    () => sourceOrder.reduce((sum, source) => sum + report.sources[source].length, 0),
-    [report],
-  );
-
   const switchView = useCallback((view: DashboardView) => {
     setActiveView(view);
 
@@ -2621,39 +2615,6 @@ export function ReportDashboard({
 
         {activeView === "report" ? (
           <>
-            <div className="mb-6 grid gap-3 md:grid-cols-3">
-              <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="text-xs font-medium text-slate-500">热点条目</div>
-                <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
-                  {totalItems}
-                </div>
-              </div>
-              {sourceOrder.map((source) => {
-                const status = report.sourceStatus[source];
-                return (
-                  <div
-                    key={source}
-                    className="rounded-md border border-slate-200 bg-white p-4 shadow-sm"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs font-medium text-slate-500">
-                        {sourceLabel(source)}
-                      </div>
-                      {status.ok ? (
-                        <CheckCircle2 className="size-4 text-emerald-600" />
-                      ) : (
-                        <AlertTriangle className="size-4 text-amber-600" />
-                      )}
-                    </div>
-                    <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
-                      {status.count}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">{status.message}</div>
-                  </div>
-                );
-              })}
-            </div>
-
             <MarketPulseGrid items={report.marketPulse} />
 
             <div className="mb-6 grid gap-4 lg:grid-cols-2">
