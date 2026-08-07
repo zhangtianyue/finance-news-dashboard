@@ -5,6 +5,7 @@ import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 
 type DcaFrequency = "monthly" | "weekly" | "daily";
 type PriceSource = "remote" | "csv";
+type DashboardTheme = "light" | "dark";
 
 type DcaSettings = {
   ticker: string;
@@ -349,9 +350,32 @@ function drawLine(
   ctx.stroke();
 }
 
-function renderChart(canvas: HTMLCanvasElement, series: DcaSeriesPoint[]) {
+function renderChart(
+  canvas: HTMLCanvasElement,
+  series: DcaSeriesPoint[],
+  theme: DashboardTheme,
+) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
+
+  const palette =
+    theme === "dark"
+      ? {
+          background: "#111820",
+          grid: "#293440",
+          label: "#8f9dad",
+          invested: "#7d8997",
+          value: "#fb7185",
+          legend: "#bac6d3",
+        }
+      : {
+          background: "#ffffff",
+          grid: "#e5e7eb",
+          label: "#64748b",
+          invested: "#94a3b8",
+          value: "#dc2626",
+          legend: "#334155",
+        };
 
   const ratio = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -363,7 +387,7 @@ function renderChart(canvas: HTMLCanvasElement, series: DcaSeriesPoint[]) {
   const height = rect.height;
   const pad = { top: 28, right: 24, bottom: 42, left: 72 };
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = palette.background;
   ctx.fillRect(0, 0, width, height);
 
   if (!series.length) return;
@@ -374,9 +398,9 @@ function renderChart(canvas: HTMLCanvasElement, series: DcaSeriesPoint[]) {
   const yFor = (value: number) =>
     height - pad.bottom - (value / maxY) * (height - pad.top - pad.bottom);
 
-  ctx.strokeStyle = "#e5e7eb";
+  ctx.strokeStyle = palette.grid;
   ctx.lineWidth = 1;
-  ctx.fillStyle = "#64748b";
+  ctx.fillStyle = palette.label;
   ctx.font = "12px ui-sans-serif, system-ui, sans-serif";
   for (let i = 0; i <= 4; i += 1) {
     const value = (maxY / 4) * i;
@@ -391,32 +415,32 @@ function renderChart(canvas: HTMLCanvasElement, series: DcaSeriesPoint[]) {
   drawLine(
     ctx,
     series.map((point) => point.invested),
-    "#94a3b8",
+    palette.invested,
     xFor,
     yFor,
   );
   drawLine(
     ctx,
     series.map((point) => point.value),
-    "#dc2626",
+    palette.value,
     xFor,
     yFor,
   );
 
-  ctx.fillStyle = "#64748b";
+  ctx.fillStyle = palette.label;
   ctx.fillText(formatDateInput(series[0].date), pad.left, height - 14);
   const endText = formatDateInput(series.at(-1)?.date ?? series[0].date);
   ctx.fillText(endText, width - pad.right - ctx.measureText(endText).width, height - 14);
 
   const legend = [
-    ["#dc2626", "组合市值"],
-    ["#94a3b8", "累计投入"],
+    [palette.value, "组合市值"],
+    [palette.invested, "累计投入"],
   ] as const;
   let x = width - pad.right - 168;
   for (const [color, label] of legend) {
     ctx.fillStyle = color;
     ctx.fillRect(x, pad.top - 8, 18, 3);
-    ctx.fillStyle = "#334155";
+    ctx.fillStyle = palette.legend;
     ctx.fillText(label, x + 24, pad.top - 3);
     x += 84;
   }
@@ -564,7 +588,7 @@ function DatePartsSelect({
   );
 }
 
-export function DcaBacktestPanel() {
+export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ticker, setTicker] = useState("SPY");
   const [startDate, setStartDate] = useState(defaultStartDate);
@@ -581,12 +605,12 @@ export function DcaBacktestPanel() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !result) return;
-    renderChart(canvas, result.series);
+    renderChart(canvas, result.series, theme);
 
-    const handleResize = () => renderChart(canvas, result.series);
+    const handleResize = () => renderChart(canvas, result.series, theme);
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [result]);
+  }, [result, theme]);
 
   async function handleRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -874,7 +898,7 @@ export function DcaBacktestPanel() {
               {result ? (
                 <canvas ref={canvasRef} className="block h-full w-full" />
               ) : (
-                <div className="absolute inset-0 bg-[linear-gradient(#e5e7eb_1px,transparent_1px),linear-gradient(90deg,#e5e7eb_1px,transparent_1px)] bg-[size:64px_64px]">
+                <div className="dca-chart-placeholder absolute inset-0 bg-[size:64px_64px]">
                   <div className="flex h-full items-center justify-center">
                     <div className="rounded-md border border-slate-200 bg-white px-4 py-3 text-center shadow-sm">
                       <div className="text-sm font-semibold text-slate-950">等待回测</div>
@@ -888,49 +912,50 @@ export function DcaBacktestPanel() {
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
-            <table className="min-w-[780px] w-full border-collapse text-left text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 font-semibold">日期</th>
-                  <th className="px-4 py-3 text-right font-semibold">价格</th>
-                  <th className="px-4 py-3 text-right font-semibold">投入</th>
-                  <th className="px-4 py-3 text-right font-semibold">买入股数</th>
-                  <th className="px-4 py-3 text-right font-semibold">累计股数</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {recentTrades.length ? (
-                  recentTrades.map((trade) => (
-                    <tr key={`${trade.date.toISOString()}-${trade.totalShares}`}>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-700">
-                        {formatDateInput(trade.date)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-950">
-                        {formatNumber(trade.price, 3)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-950">
-                        {formatMoney(trade.invested)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-950">
-                        {formatNumber(trade.sharesBought, 6)}
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-950">
-                        {formatNumber(trade.totalShares, 6)}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
-                      运行一次回测后显示最近买入记录
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
         </div>
+      </div>
+
+      <div className="overflow-x-auto rounded-md border border-slate-200 bg-white shadow-sm">
+        <table className="w-full min-w-[720px] table-fixed border-collapse text-left text-sm">
+          <thead className="bg-slate-50 text-xs text-slate-500">
+            <tr>
+              <th className="w-1/5 px-4 py-3 font-semibold">日期</th>
+              <th className="w-1/5 px-4 py-3 text-right font-semibold">价格</th>
+              <th className="w-1/5 px-4 py-3 text-right font-semibold">投入</th>
+              <th className="w-1/5 px-4 py-3 text-right font-semibold">买入股数</th>
+              <th className="w-1/5 px-4 py-3 text-right font-semibold">累计股数</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {recentTrades.length ? (
+              recentTrades.map((trade) => (
+                <tr key={`${trade.date.toISOString()}-${trade.totalShares}`}>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-700">
+                    {formatDateInput(trade.date)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-950">
+                    {formatNumber(trade.price, 3)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-950">
+                    {formatMoney(trade.invested)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-950">
+                    {formatNumber(trade.sharesBought, 6)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono text-slate-950">
+                    {formatNumber(trade.totalShares, 6)}
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-500">
+                  运行一次回测后显示最近买入记录
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </section>
   );

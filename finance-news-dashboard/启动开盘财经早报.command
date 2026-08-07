@@ -76,7 +76,7 @@ if curl -fsS -X POST "${BASE_URL}/api/reports/generate" -o "$OUTPUT_FILE"; then
   echo "页面地址：$BASE_URL"
   echo
 
-  # 打开默认浏览器查看页面。页面默认就是“开盘前财经早报”。
+  # 打开默认浏览器查看页面。页面默认就是“盘前财经早报”。
   open "$BASE_URL"
 else
   echo "早报生成失败。请查看服务日志：$LOG_FILE"

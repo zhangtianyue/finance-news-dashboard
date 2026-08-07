@@ -21,7 +21,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GlobalValuationSnapshot,
   IndexValuation,
@@ -39,8 +39,14 @@ import type { PolymarketHotItem, PolymarketHotSnapshot } from "@/lib/polymarket-
 import type { StockHeatItem, StockHeatSector, StockHeatSnapshot } from "@/lib/stock-heat";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
-type DashboardView = "report" | "valuation" | "qdii" | "dividends" | "polymarket" | "dca";
-type MarketHeatMode = "stocks" | "sectors" | "events";
+export type DashboardView =
+  | "report"
+  | "valuation"
+  | "qdii"
+  | "dividends"
+  | "polymarket"
+  | "dca";
+export type MarketHeatMode = "stocks" | "sectors" | "events";
 type DashboardTheme = "light" | "dark";
 type DashboardNavItem = {
   view: DashboardView;
@@ -87,6 +93,23 @@ function readDashboardTheme() {
   if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
 
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function dashboardDocumentTitle(view: DashboardView) {
+  switch (view) {
+    case "valuation":
+      return "全球指数估值雷达";
+    case "qdii":
+      return "大陆上市 QDII ETF";
+    case "dividends":
+      return `A 股股息率 > ${ashareDividendMinimumYield}%`;
+    case "polymarket":
+      return "市场热度";
+    case "dca":
+      return "定投回测器";
+    default:
+      return "盘前财经早报";
+  }
 }
 
 function dashboardViewHref(view: DashboardView) {
@@ -1789,14 +1812,19 @@ function AshareDividendTable({
 export function ReportDashboard({
   initialReport,
   initialValuations,
+  initialView,
+  initialMarketHeatMode,
 }: {
   initialReport: MorningReport;
   initialValuations: GlobalValuationSnapshot;
+  initialView: DashboardView;
+  initialMarketHeatMode: MarketHeatMode;
 }) {
   const [report, setReport] = useState(initialReport);
   const [valuations, setValuations] = useState(initialValuations);
-  const [activeView, setActiveView] = useState<DashboardView>("report");
+  const [activeView, setActiveView] = useState<DashboardView>(initialView);
   const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("light");
+  const hasAutoRefreshedReport = useRef(false);
   const [hasRefreshedValuations, setHasRefreshedValuations] = useState(false);
   const [hasRefreshedQdii, setHasRefreshedQdii] = useState(false);
   const [isValuationLoading, setIsValuationLoading] = useState(false);
@@ -1810,7 +1838,8 @@ export function ReportDashboard({
   const [dividendSnapshot, setDividendSnapshot] = useState<AshareDividendSnapshot | null>(null);
   const [isDividendLoading, setIsDividendLoading] = useState(false);
   const [dividendMessage, setDividendMessage] = useState<string | null>(null);
-  const [marketHeatMode, setMarketHeatMode] = useState<MarketHeatMode>("stocks");
+  const [marketHeatMode, setMarketHeatMode] =
+    useState<MarketHeatMode>(initialMarketHeatMode);
   const [stockHeatSnapshot, setStockHeatSnapshot] = useState<StockHeatSnapshot | null>(null);
   const [isStockHeatLoading, setIsStockHeatLoading] = useState(false);
   const [stockHeatMessage, setStockHeatMessage] = useState<string | null>(null);
@@ -1831,6 +1860,7 @@ export function ReportDashboard({
     setActiveView(view);
 
     if (typeof window === "undefined") return;
+    document.title = `${dashboardDocumentTitle(view)} | MARKET DESK`;
 
     const href =
       view === "polymarket" ? marketHeatModeHref(marketHeatMode) : dashboardViewHref(view);
@@ -2107,17 +2137,22 @@ export function ReportDashboard({
   }
 
   useEffect(() => {
+    if (activeView !== "report" || hasAutoRefreshedReport.current) return;
+    hasAutoRefreshedReport.current = true;
+
     const timer = window.setTimeout(() => {
       void refreshReport("auto");
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [activeView]);
 
   useEffect(() => {
     const syncViewFromUrl = () => {
-      setActiveView(readDashboardViewFromLocation());
+      const view = readDashboardViewFromLocation();
+      setActiveView(view);
       setMarketHeatMode(readMarketHeatModeFromLocation());
+      document.title = `${dashboardDocumentTitle(view)} | MARKET DESK`;
     };
 
     syncViewFromUrl();
@@ -2221,25 +2256,14 @@ export function ReportDashboard({
             ? "按需运行"
             : valuations.asOfLabel;
 
-  const activeTitle =
-    activeView === "report"
-      ? "开盘前财经早报"
-      : activeView === "valuation"
-        ? "全球指数估值雷达"
-        : activeView === "qdii"
-          ? "大陆上市 QDII ETF"
-          : activeView === "dividends"
-            ? `A 股股息率 > ${ashareDividendMinimumYield}%`
-            : activeView === "polymarket"
-              ? "市场热度"
-              : "定投回测器";
+  const activeTitle = dashboardDocumentTitle(activeView);
 
   const navItems: DashboardNavItem[] = [
     {
       view: "report",
       label: "财经早报",
       icon: <Rss className="size-3.5" />,
-      title: "查看开盘前财经早报",
+      title: "查看盘前财经早报",
     },
     {
       view: "polymarket",
@@ -2274,10 +2298,7 @@ export function ReportDashboard({
   ];
 
   return (
-    <main
-      className="dashboard-shell min-h-screen bg-[#eef2f5] text-slate-950"
-      data-theme={dashboardTheme}
-    >
+    <main className="dashboard-shell min-h-screen bg-[#eef2f5] text-slate-950">
       <div className="min-h-screen lg:flex">
         <aside className="hidden h-screen w-52 shrink-0 flex-col border-r border-white/10 bg-[#0b1118] text-white lg:sticky lg:top-0 lg:flex">
           <div className="flex h-20 items-center gap-3 border-b border-white/10 px-4">
@@ -2686,7 +2707,7 @@ export function ReportDashboard({
             )}
           </>
         ) : (
-          <DcaBacktestPanel />
+          <DcaBacktestPanel theme={dashboardTheme} />
         )}
           </div>
         </div>
