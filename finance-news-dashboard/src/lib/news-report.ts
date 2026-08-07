@@ -1,8 +1,15 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { revalidateTag, unstable_cache } from "next/cache";
+import {
+  createEmptyMorningMarketContext,
+  fetchMorningMarketContext,
+  type MarketPulseItem,
+  type MorningCalendarItem,
+  type MorningMarketContext,
+} from "@/lib/morning-market";
 
-export type SourceId = "cls" | "wallstreetcn" | "xueqiu";
+export type SourceId = "cls" | "wallstreetcn";
 
 export type NewsItem = {
   id: string;
@@ -25,6 +32,9 @@ export type MorningReport = {
   generatedAtLabel: string;
   sources: Record<SourceId, NewsItem[]>;
   sourceStatus: Record<SourceId, { ok: boolean; count: number; message: string }>;
+  marketPulse: MarketPulseItem[];
+  macroCalendar: MorningCalendarItem[];
+  earningsCalendar: MorningCalendarItem[];
   summary: ReportSection;
   marketImpact: ReportSection;
   risks: ReportSection;
@@ -35,22 +45,20 @@ export type MorningReport = {
 const SOURCE_NAMES: Record<SourceId, string> = {
   cls: "财联社",
   wallstreetcn: "华尔街见闻",
-  xueqiu: "雪球个股热度",
 };
 
 const SOURCE_HOSTS: Record<SourceId, string[]> = {
   cls: ["cls.cn"],
   wallstreetcn: ["wallstreetcn.com"],
-  xueqiu: ["xueqiu.com"],
 };
 
-const DEFAULT_SOURCES: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
+const DEFAULT_SOURCES: SourceId[] = ["cls", "wallstreetcn"];
 const expectedSourceCount = 10;
 const reportDir = path.join(process.cwd(), "data", "reports");
 const latestReportPath = path.join(reportDir, "latest.json");
 const fetchTimeoutMs = 5000;
 const fetchAttemptCount = 2;
-const morningReportCacheTag = "morning-report-v2";
+const morningReportCacheTag = "morning-report-v3";
 const morningReportRevalidateSeconds = 20 * 60;
 
 function isVercelRuntime() {
@@ -75,7 +83,14 @@ async function readLocalLatestReport(): Promise<MorningReport | null> {
   try {
     const file = await fs.readFile(latestReportPath, "utf8");
     const report = JSON.parse(file) as MorningReport;
-    return report?.sources && report?.sourceStatus ? report : null;
+    return report?.sources?.cls &&
+      report?.sources?.wallstreetcn &&
+      report?.sourceStatus &&
+      Array.isArray(report.marketPulse) &&
+      Array.isArray(report.macroCalendar) &&
+      Array.isArray(report.earningsCalendar)
+      ? report
+      : null;
   } catch {
     return null;
   }
@@ -289,7 +304,10 @@ function statusFor(items: NewsItem[]) {
   return { ok: true, count: items.length, message: "已更新" };
 }
 
-function buildReport(sources: Record<SourceId, NewsItem[]>): MorningReport {
+function buildReport(
+  sources: Record<SourceId, NewsItem[]>,
+  marketContext: MorningMarketContext,
+): MorningReport {
   const all = DEFAULT_SOURCES.flatMap((source) => sources[source]);
   const analysisItems = deduplicateForAnalysis(all);
   const { date, label } = shanghaiDateTime();
@@ -421,8 +439,10 @@ function buildReport(sources: Record<SourceId, NewsItem[]>): MorningReport {
     sourceStatus: {
       cls: statusFor(sources.cls),
       wallstreetcn: statusFor(sources.wallstreetcn),
-      xueqiu: statusFor(sources.xueqiu),
     },
+    marketPulse: marketContext.marketPulse,
+    macroCalendar: marketContext.macroCalendar,
+    earningsCalendar: marketContext.earningsCalendar,
     focusTags,
     summary: {
       title: "热点摘要",
@@ -446,17 +466,20 @@ function buildReport(sources: Record<SourceId, NewsItem[]>): MorningReport {
         aiHardware.length >= 3
           ? "AI 硬件线索密集时需警惕交易拥挤和高位放量分歧。"
           : "科技线索不够密集时，追高确定性下降，需等待基本面或资金确认。",
-        "雪球部分反映个股关注度而非新闻事实；整份早报仍需结合公告、财报、宏观数据和实时盘口确认。",
+        "早报基于标题、隔夜行情和公开日历生成，仍需结合公告原文、宏观数据修订值和实时盘口确认。",
       ],
     },
   };
 }
 
 export async function generateMorningReport(): Promise<MorningReport> {
-  const entries = await Promise.allSettled(
-    DEFAULT_SOURCES.map(async (source) => [source, await fetchSource(source)] as const),
-  );
-  const sources: Record<SourceId, NewsItem[]> = { cls: [], wallstreetcn: [], xueqiu: [] };
+  const [entries, marketContext] = await Promise.all([
+    Promise.allSettled(
+      DEFAULT_SOURCES.map(async (source) => [source, await fetchSource(source)] as const),
+    ),
+    fetchMorningMarketContext(),
+  ]);
+  const sources: Record<SourceId, NewsItem[]> = { cls: [], wallstreetcn: [] };
   const errors: string[] = [];
 
   entries.forEach((entry, index) => {
@@ -473,7 +496,7 @@ export async function generateMorningReport(): Promise<MorningReport> {
     throw new Error(`早报更新未完成，已保留上一版。${errors.join("；")}`);
   }
 
-  const report = buildReport(sources);
+  const report = buildReport(sources, marketContext);
   await persistLatestReport(report);
   return report;
 }
@@ -490,12 +513,15 @@ const getCachedMorningReport = unstable_cache(
 let refreshPromise: Promise<MorningReport> | null = null;
 
 export function createEmptyReport(): MorningReport {
-  const report = buildReport({ cls: [], wallstreetcn: [], xueqiu: [] });
+  const report = buildReport(
+    { cls: [], wallstreetcn: [] },
+    createEmptyMorningMarketContext(),
+  );
   return {
     ...report,
     generatedAt: "",
     generatedAtLabel: "暂无可用缓存",
-    refreshNotice: "三路来源暂时不可用，页面功能不受影响。",
+    refreshNotice: "新闻或盘前数据暂时不可用，页面其他功能不受影响。",
   };
 }
 

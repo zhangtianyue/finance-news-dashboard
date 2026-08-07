@@ -35,10 +35,11 @@ import {
 import type { AshareDividendSnapshot } from "@/lib/a-share-dividends";
 import { DcaBacktestPanel } from "@/components/dca-backtest-panel";
 import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
+import type { MarketPulseItem, MorningCalendarItem } from "@/lib/morning-market";
 import type { PolymarketHotItem, PolymarketHotSnapshot } from "@/lib/polymarket-hot";
 import type { StockHeatItem, StockHeatSector, StockHeatSnapshot } from "@/lib/stock-heat";
 
-const sourceOrder: SourceId[] = ["cls", "wallstreetcn", "xueqiu"];
+const sourceOrder: SourceId[] = ["cls", "wallstreetcn"];
 export type DashboardView =
   | "report"
   | "valuation"
@@ -124,7 +125,6 @@ function sourceLabel(source: SourceId) {
   return {
     cls: "财联社",
     wallstreetcn: "华尔街见闻",
-    xueqiu: "雪球个股热度",
   }[source];
 }
 
@@ -189,6 +189,124 @@ function Section({
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+function MarketPulseGrid({ items }: { items: MarketPulseItem[] }) {
+  return (
+    <section className="mb-6">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="text-base font-semibold text-slate-950">隔夜市场</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            美股为最近收盘，利率、汇率和商品为最新可用行情
+          </p>
+        </div>
+        <span className="font-mono text-xs text-slate-500">盘前关键变量</span>
+      </div>
+
+      {items.length ? (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {items.map((item) => {
+            const changeClass =
+              item.tone === "up"
+                ? "text-red-600"
+                : item.tone === "down"
+                  ? "text-emerald-600"
+                  : "text-slate-500";
+            return (
+              <article
+                key={item.id}
+                className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-3 shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-xs font-medium text-slate-500">
+                    {item.label}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-slate-400">{item.group}</span>
+                </div>
+                <div className="mt-2 flex min-w-0 items-baseline justify-between gap-1">
+                  <span className="whitespace-nowrap font-mono text-base font-semibold text-slate-950 sm:text-lg">
+                    {item.displayValue}
+                  </span>
+                  <span className={`shrink-0 font-mono text-[11px] font-semibold sm:text-xs ${changeClass}`}>
+                    {item.changeLabel}
+                  </span>
+                </div>
+                <div className="mt-1 font-mono text-[10px] text-slate-400">{item.asOfLabel}</div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-md border border-dashed border-slate-300 bg-white/70 px-4 py-6 text-sm text-slate-500">
+          暂无可用的隔夜行情缓存
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CalendarPanel({
+  title,
+  subtitle,
+  items,
+}: {
+  title: string;
+  subtitle: string;
+  items: MorningCalendarItem[];
+}) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-200 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Clock3 className="size-4 text-sky-600" />
+          <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
+        </div>
+        <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+      </div>
+
+      {items.length ? (
+        <div className="divide-y divide-slate-200">
+          {items.map((item) => {
+            const importanceClass =
+              item.importance === "high"
+                ? "bg-red-500"
+                : item.importance === "medium"
+                  ? "bg-amber-500"
+                  : "bg-slate-300";
+            return (
+              <a
+                key={item.id}
+                href={item.url}
+                target="_blank"
+                rel="noreferrer"
+                className="group grid grid-cols-[4.5rem_1fr_auto] items-start gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
+              >
+                <div className="font-mono text-xs font-semibold text-slate-600">
+                  {item.timeLabel}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`size-1.5 shrink-0 rounded-full ${importanceClass}`} />
+                    <span className="font-mono text-[10px] font-semibold text-sky-700">
+                      {item.category}
+                    </span>
+                    <span className="truncate text-sm font-semibold text-slate-900">
+                      {item.title}
+                    </span>
+                  </div>
+                  <div className="mt-1 truncate text-xs text-slate-500">{item.detail}</div>
+                </div>
+                <ArrowUpRight className="mt-0.5 size-4 text-slate-400 transition-colors group-hover:text-slate-900" />
+              </a>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="px-4 py-6 text-sm text-slate-500">今日暂无高影响事件</div>
+      )}
     </section>
   );
 }
@@ -2404,7 +2522,7 @@ export function ReportDashboard({
                   onClick={refreshReport}
                   disabled={isRefreshing}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-                  title="重新抓取三路新闻源并生成最新早报"
+                  title="重新抓取两路新闻、隔夜行情和今日财经日历"
                 >
                   <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
                   {isRefreshing ? "刷新中" : "刷新早报"}
@@ -2503,7 +2621,7 @@ export function ReportDashboard({
 
         {activeView === "report" ? (
           <>
-            <div className="mb-6 grid gap-3 md:grid-cols-4">
+            <div className="mb-6 grid gap-3 md:grid-cols-3">
               <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="text-xs font-medium text-slate-500">热点条目</div>
                 <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
@@ -2536,6 +2654,21 @@ export function ReportDashboard({
               })}
             </div>
 
+            <MarketPulseGrid items={report.marketPulse} />
+
+            <div className="mb-6 grid gap-4 lg:grid-cols-2">
+              <CalendarPanel
+                title="今日宏观日历"
+                subtitle="优先展示可能影响利率、汇率和中国资产定价的事件"
+                items={report.macroCalendar}
+              />
+              <CalendarPanel
+                title="重点财报"
+                subtitle="按市值筛选今日美股主要财报，时间均为美股交易时段"
+                items={report.earningsCalendar}
+              />
+            </div>
+
             <div className="mb-6 flex flex-wrap gap-2">
               {report.focusTags.map((tag) => (
                 <span
@@ -2565,7 +2698,7 @@ export function ReportDashboard({
               />
             </div>
 
-            <div className="mt-8 grid gap-5 lg:grid-cols-3">
+            <div className="mt-8 grid gap-5 lg:grid-cols-2">
               {sourceOrder.map((source) => (
                 <section key={source}>
                   <div className="mb-3 flex items-center justify-between">
