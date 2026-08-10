@@ -257,11 +257,13 @@ function CalendarPanel({
   title,
   subtitle,
   date,
+  timeZoneLabel,
   items,
 }: {
   title: string;
   subtitle: string;
   date: string;
+  timeZoneLabel: string;
   items: MorningCalendarItem[];
 }) {
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
@@ -278,7 +280,7 @@ function CalendarPanel({
             <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
           </div>
           <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600">
-            {dateLabel}
+            {dateLabel} · {timeZoneLabel}
           </span>
         </div>
         <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
@@ -3013,14 +3015,16 @@ export function ReportDashboard({
             <div className="mb-6 grid gap-4 lg:grid-cols-2">
               <CalendarPanel
                 title="今日宏观日历"
-                subtitle="优先展示可能影响利率、汇率和中国资产定价的事件"
+                subtitle="优先展示可能影响利率、汇率和中国资产定价的事件，时间均已换算为北京时间（UTC+8）"
                 date={report.date}
+                timeZoneLabel="北京时间"
                 items={report.macroCalendar}
               />
               <CalendarPanel
                 title="重点财报"
-                subtitle="按市值筛选今日美股主要财报，时间均为美股交易时段"
+                subtitle="按市值筛选主要美股财报，日期按美东交易日，盘前/盘后按美股交易时段"
                 date={report.date}
+                timeZoneLabel="美东交易日"
                 items={report.earningsCalendar}
               />
             </div>
