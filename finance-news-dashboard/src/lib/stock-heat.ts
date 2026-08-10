@@ -63,7 +63,6 @@ type RawRecord = Record<string, unknown>;
 type StockHeatCandidate = {
   market: StockHeatMarket;
   code: string;
-  marketId: number;
   name: string;
   industry: string;
   price: number;
@@ -74,6 +73,7 @@ type StockHeatCandidate = {
   amplitude: number | null;
   marketCap: number | null;
   quoteTimestamp: number | null;
+  quoteUrl: string;
 };
 
 type RankedStockCandidate = StockHeatCandidate & {
@@ -101,8 +101,11 @@ const eastmoneyFields = [
 ].join(",");
 
 const sourceUrl = "https://quote.eastmoney.com/center/";
+const sinaSourceUrl = "https://vip.stock.finance.sina.com.cn/mkt/";
+const nasdaqSourceUrl = "https://www.nasdaq.com/market-activity/stocks/screener";
 const cacheTtlMs = 60_000;
-const upstreamTimeoutMs = 4_000;
+const upstreamTimeoutMs = 4_500;
+const fallbackTimeoutMs = 6_500;
 let snapshotCache: { expiresAt: number; snapshot: StockHeatSnapshot } | null = null;
 let snapshotRefreshPromise: Promise<StockHeatSnapshot> | null = null;
 
@@ -129,6 +132,28 @@ function quoteRows(payload: unknown) {
   if (Array.isArray(diff)) return diff.filter(isRecord);
   if (isRecord(diff)) return Object.values(diff).filter(isRecord);
   return [];
+}
+
+function numericText(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(/[$,%]/g, "").trim();
+  if (!normalized || normalized === "N/A" || normalized === "-") return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function shanghaiTimestampFromClock(value: unknown) {
+  const clock = stringOrNull(value);
+  if (!clock || !/^\d{2}:\d{2}:\d{2}$/.test(clock)) return null;
+  const date = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const timestamp = Date.parse(`${date}T${clock}+08:00`);
+  return Number.isFinite(timestamp) ? Math.floor(timestamp / 1000) : null;
 }
 
 function shanghaiDateTimeFromSeconds(value: number | null) {
@@ -189,7 +214,6 @@ function candidateFromRow(row: RawRecord, market: StockHeatMarket): StockHeatCan
   return {
     market,
     code,
-    marketId,
     name,
     industry: industry ?? "其他",
     price,
@@ -200,6 +224,7 @@ function candidateFromRow(row: RawRecord, market: StockHeatMarket): StockHeatCan
     amplitude,
     marketCap,
     quoteTimestamp: numberOrNull(row.f124),
+    quoteUrl: `https://quote.eastmoney.com/unify/r/${marketId}.${code}`,
   };
 }
 
@@ -266,7 +291,7 @@ function toStockHeatItems(candidates: RankedStockCandidate[]) {
       heatLevel: candidate.heatLevel,
       signals: candidate.signals,
       quoteTimeLabel: shanghaiDateTimeFromSeconds(candidate.quoteTimestamp),
-      quoteUrl: `https://quote.eastmoney.com/unify/r/${candidate.marketId}.${candidate.code}`,
+      quoteUrl: candidate.quoteUrl,
     }));
 }
 
@@ -369,7 +394,7 @@ function rankSectors(candidates: RankedStockCandidate[]) {
       leaderName: sector.leader.name,
       leaderCode: sector.leader.code,
       leaderChangePercent: sector.leader.changePercent,
-      leaderUrl: `https://quote.eastmoney.com/unify/r/${sector.leader.marketId}.${sector.leader.code}`,
+      leaderUrl: sector.leader.quoteUrl,
     }));
 }
 
@@ -385,10 +410,11 @@ async function fetchEastmoneyRows(market: StockHeatMarket) {
     fs: market === "A股" ? "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23" : "m:105,m:106,m:107",
     fields: eastmoneyFields,
   });
-  const hosts =
-    market === "A股"
-      ? ["https://push2.eastmoney.com", "https://19.push2.eastmoney.com", "https://push2delay.eastmoney.com"]
-      : ["https://push2delay.eastmoney.com", "https://19.push2.eastmoney.com", "https://push2.eastmoney.com"];
+  const hosts = [
+    "https://push2delay.eastmoney.com",
+    "https://push2.eastmoney.com",
+    "https://19.push2.eastmoney.com",
+  ];
 
   async function fetchFromHost(host: string) {
     const response = await fetch(`${host}/api/qt/clist/get?${query.toString()}`, {
@@ -407,33 +433,218 @@ async function fetchEastmoneyRows(market: StockHeatMarket) {
   }
 
   try {
-    return await fetchFromHost(hosts[0]);
-  } catch (primaryError) {
-    const fallbackResults = await Promise.allSettled(hosts.slice(1).map(fetchFromHost));
-    const available = fallbackResults.find(
-      (result): result is PromiseFulfilledResult<RawRecord[]> => result.status === "fulfilled",
-    );
-    if (available) return available.value;
-
-    const fallbackError = fallbackResults.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    )?.reason;
-    if (fallbackError instanceof Error) throw fallbackError;
-    throw primaryError instanceof Error ? primaryError : new Error(`${market}行情暂时不可用`);
+    return await Promise.any(hosts.map(fetchFromHost));
+  } catch (error) {
+    const reasons =
+      error instanceof AggregateError
+        ? error.errors.map((reason) =>
+            reason instanceof Error ? reason.message : String(reason),
+          )
+        : [error instanceof Error ? error.message : `${market}行情暂时不可用`];
+    throw new Error([...new Set(reasons)].join("；"));
   }
 }
 
-async function fetchMarketHeat(market: StockHeatMarket) {
-  const rows = await fetchEastmoneyRows(market);
-  const candidates = rows
-    .map((row) => candidateFromRow(row, market))
+async function fetchSinaAShareCandidates() {
+  const url = new URL(
+    "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData",
+  );
+  url.search = new URLSearchParams({
+    page: "1",
+    num: "180",
+    sort: "amount",
+    asc: "0",
+    node: "hs_a",
+    symbol: "",
+    _s_r_a: "page",
+  }).toString();
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      Accept: "application/json,text/plain,*/*",
+      Referer: "https://vip.stock.finance.sina.com.cn/mkt/",
+      "User-Agent": "Mozilla/5.0",
+    },
+    signal: AbortSignal.timeout(fallbackTimeoutMs),
+  });
+  if (!response.ok) throw new Error(`新浪 A 股行情 ${response.status}`);
+  const payload = (await response.json()) as unknown;
+  if (!Array.isArray(payload)) throw new Error("新浪 A 股行情格式异常");
+
+  return payload
+    .filter(isRecord)
+    .map<StockHeatCandidate | null>((row) => {
+      const symbol = stringOrNull(row.symbol);
+      const code = stringOrNull(row.code);
+      const name = stringOrNull(row.name);
+      const price = numberOrNull(row.trade);
+      const changePercent = numberOrNull(row.changepercent);
+      const amount = numberOrNull(row.amount);
+      if (
+        !symbol ||
+        !code ||
+        !name ||
+        price == null ||
+        price <= 0 ||
+        changePercent == null ||
+        amount == null ||
+        amount <= 0
+      ) {
+        return null;
+      }
+      const high = numberOrNull(row.high);
+      const low = numberOrNull(row.low);
+      const previousClose = numberOrNull(row.settlement);
+      const amplitude =
+        high != null && low != null && previousClose != null && previousClose > 0
+          ? ((high - low) / previousClose) * 100
+          : null;
+      const marketCap = numberOrNull(row.mktcap);
+      return {
+        market: "A股",
+        code,
+        name,
+        industry: "其他",
+        price,
+        changePercent,
+        amount,
+        turnoverRate: numberOrNull(row.turnoverratio),
+        volumeRatio: null,
+        amplitude,
+        marketCap: marketCap == null ? null : marketCap * 10_000,
+        quoteTimestamp: shanghaiTimestampFromClock(row.ticktime),
+        quoteUrl: `https://finance.sina.com.cn/realstock/company/${symbol}/nc.shtml`,
+      };
+    })
     .filter((item): item is StockHeatCandidate => item != null);
+}
+
+const nasdaqSectorNames: Record<string, string> = {
+  Technology: "科技",
+  "Health Care": "医疗保健",
+  Finance: "金融",
+  Industrials: "工业",
+  Energy: "能源",
+  Utilities: "公用事业",
+  "Real Estate": "房地产",
+  Telecommunications: "通信",
+  "Consumer Discretionary": "可选消费",
+  "Consumer Staples": "必选消费",
+  "Basic Materials": "原材料",
+  Miscellaneous: "其他",
+};
+
+async function fetchNasdaqUsCandidates() {
+  const url = new URL("https://api.nasdaq.com/api/screener/stocks");
+  url.search = new URLSearchParams({
+    tableonly: "true",
+    limit: "500",
+    offset: "0",
+    download: "true",
+  }).toString();
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: {
+      Accept: "application/json, text/plain, */*",
+      Origin: "https://www.nasdaq.com",
+      Referer: nasdaqSourceUrl,
+      "User-Agent": "Mozilla/5.0",
+    },
+    signal: AbortSignal.timeout(fallbackTimeoutMs),
+  });
+  if (!response.ok) throw new Error(`Nasdaq 美股行情 ${response.status}`);
+  const payload = (await response.json()) as unknown;
+  const rows =
+    isRecord(payload) && isRecord(payload.data) && Array.isArray(payload.data.rows)
+      ? payload.data.rows.filter(isRecord)
+      : [];
+  if (!rows.length) throw new Error("Nasdaq 美股行情返回为空");
+  const quoteTimestamp = Math.floor(Date.now() / 1000);
+
+  return rows
+    .map<StockHeatCandidate | null>((row) => {
+      const code = stringOrNull(row.symbol);
+      const name = stringOrNull(row.name);
+      const price = numericText(row.lastsale);
+      const changePercent = numericText(row.pctchange);
+      const volume = numericText(row.volume);
+      const marketCap = numericText(row.marketCap);
+      const sector = stringOrNull(row.sector);
+      if (
+        !code ||
+        !name ||
+        price == null ||
+        price <= 0 ||
+        changePercent == null ||
+        volume == null ||
+        volume <= 0 ||
+        marketCap == null ||
+        marketCap < 100_000_000 ||
+        /ETF|ETN|Warrant|Units?|Rights?|Preferred Stock|Fund/i.test(name)
+      ) {
+        return null;
+      }
+      const amount = price * volume;
+      return {
+        market: "美股",
+        code,
+        name,
+        industry: sector ? (nasdaqSectorNames[sector] ?? sector) : "其他",
+        price,
+        changePercent,
+        amount,
+        turnoverRate: marketCap > 0 ? (amount / marketCap) * 100 : null,
+        volumeRatio: null,
+        amplitude: null,
+        marketCap,
+        quoteTimestamp,
+        quoteUrl: stringOrNull(row.url)
+          ? `https://www.nasdaq.com${stringOrNull(row.url)}`
+          : nasdaqSourceUrl,
+      };
+    })
+    .filter((item): item is StockHeatCandidate => item != null);
+}
+
+async function fetchMarketHeat(market: StockHeatMarket) {
+  let candidates: StockHeatCandidate[];
+  let sourceName = "东方财富行情";
+  let resultSourceUrl = sourceUrl;
+  let usedFallback = false;
+  try {
+    const rows = await fetchEastmoneyRows(market);
+    candidates = rows
+      .map((row) => candidateFromRow(row, market))
+      .filter((item): item is StockHeatCandidate => item != null);
+  } catch (primaryError) {
+    usedFallback = true;
+    try {
+      if (market === "A股") {
+        candidates = await fetchSinaAShareCandidates();
+        sourceName = "新浪财经行情";
+        resultSourceUrl = sinaSourceUrl;
+      } else {
+        candidates = await fetchNasdaqUsCandidates();
+        sourceName = "Nasdaq Screener";
+        resultSourceUrl = nasdaqSourceUrl;
+      }
+    } catch (fallbackError) {
+      const primaryMessage =
+        primaryError instanceof Error ? primaryError.message : "东方财富更新失败";
+      const fallbackMessage =
+        fallbackError instanceof Error ? fallbackError.message : "备用数据源更新失败";
+      throw new Error(`${primaryMessage}；${fallbackMessage}`);
+    }
+  }
   if (!candidates.length) throw new Error(`${market}没有可排名的股票`);
   const rankedCandidates = scoreCandidates(candidates);
   return {
     stocks: rankCandidates(rankedCandidates),
     panorama: panoramaCandidates(rankedCandidates),
     sectors: rankSectors(rankedCandidates),
+    sourceName,
+    sourceUrl: resultSourceUrl,
+    usedFallback,
   };
 }
 
@@ -499,11 +710,27 @@ async function refreshStockHeatSnapshot(): Promise<StockHeatSnapshot> {
   const updatedAt = new Date();
   const status =
     freshMarkets === 2 ? "dynamic" : freshMarkets === 1 ? "partial" : ("cached" as const);
+  const freshResults = [aShareResult, usStockResult]
+    .filter(
+      (
+        result,
+      ): result is PromiseFulfilledResult<Awaited<ReturnType<typeof fetchMarketHeat>>> =>
+        result.status === "fulfilled",
+    )
+    .map((result) => result.value);
+  const sourceNames = [...new Set(freshResults.map((result) => result.sourceName))];
+  const fallbackSources = freshResults
+    .filter((result) => result.usedFallback)
+    .map((result) => result.sourceName);
   const message =
     status === "dynamic"
-      ? `已更新 A 股 ${aSharePanorama.length} 只、美股 ${usStockPanorama.length} 只成交全景样本和热榜。`
+      ? fallbackSources.length
+        ? `东方财富云端连接超时，已自动切换 ${fallbackSources.join("、")}；更新 A 股 ${aSharePanorama.length} 只、美股 ${usStockPanorama.length} 只样本。`
+        : `已更新 A 股 ${aSharePanorama.length} 只、美股 ${usStockPanorama.length} 只成交全景样本和热榜。`
       : status === "partial"
-        ? "部分市场更新失败，已保留上一轮可用榜单。"
+        ? fallbackSources.length
+          ? `部分市场已通过 ${fallbackSources.join("、")} 更新，失败部分保留上一轮可用榜单。`
+          : "部分市场更新失败，已保留上一轮可用榜单。"
         : "实时更新失败，正在显示上一轮榜单。";
   const snapshot: StockHeatSnapshot = {
     status,
@@ -519,8 +746,8 @@ async function refreshStockHeatSnapshot(): Promise<StockHeatSnapshot> {
       .format(updatedAt)
       .replace(/\//g, "-"),
     message,
-    sourceName: "东方财富行情",
-    sourceUrl,
+    sourceName: sourceNames.join(" / ") || cached?.sourceName || "东方财富行情",
+    sourceUrl: freshResults[0]?.sourceUrl ?? cached?.sourceUrl ?? sourceUrl,
     aShareAsOfLabel: latestQuoteLabel(aShares, cached?.aShareAsOfLabel ?? "待更新"),
     usStockAsOfLabel: latestQuoteLabel(usStocks, cached?.usStockAsOfLabel ?? "待更新"),
     aShares,

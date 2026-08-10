@@ -2601,12 +2601,15 @@ export function ReportDashboard({
     }
   }
 
-  async function refreshStockHeat() {
+  async function refreshStockHeat(force = false) {
     setIsStockHeatLoading(true);
     setStockHeatMessage("正在更新 A 股和美股热度...");
 
     try {
-      const response = await fetch("/api/market/stock-heat");
+      const response = await fetch(
+        `/api/market/stock-heat${force ? "?refresh=1" : ""}`,
+        { cache: "no-store" },
+      );
       if (!response.ok) {
         throw new Error(`个股热度更新失败：${response.status}`);
       }
@@ -2954,7 +2957,7 @@ export function ReportDashboard({
                   type="button"
                   onClick={() =>
                     marketHeatMode !== "events"
-                      ? refreshStockHeat()
+                      ? refreshStockHeat(true)
                       : refreshPolymarketHotspots()
                   }
                   disabled={
