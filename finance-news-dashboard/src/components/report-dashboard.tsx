@@ -256,18 +256,30 @@ function MarketPulseGrid({ items }: { items: MarketPulseItem[] }) {
 function CalendarPanel({
   title,
   subtitle,
+  date,
   items,
 }: {
   title: string;
   subtitle: string;
+  date: string;
   items: MorningCalendarItem[];
 }) {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const dateLabel = dateMatch
+    ? `${dateMatch[1]}年${Number(dateMatch[2])}月${Number(dateMatch[3])}日`
+    : date;
+
   return (
     <section className="rounded-md border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Clock3 className="size-4 text-sky-600" />
-          <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex items-center gap-2">
+            <Clock3 className="size-4 text-sky-600" />
+            <h2 className="text-sm font-semibold text-slate-950">{title}</h2>
+          </div>
+          <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600">
+            {dateLabel}
+          </span>
         </div>
         <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
       </div>
@@ -3002,11 +3014,13 @@ export function ReportDashboard({
               <CalendarPanel
                 title="今日宏观日历"
                 subtitle="优先展示可能影响利率、汇率和中国资产定价的事件"
+                date={report.date}
                 items={report.macroCalendar}
               />
               <CalendarPanel
                 title="重点财报"
                 subtitle="按市值筛选今日美股主要财报，时间均为美股交易时段"
+                date={report.date}
                 items={report.earningsCalendar}
               />
             </div>
