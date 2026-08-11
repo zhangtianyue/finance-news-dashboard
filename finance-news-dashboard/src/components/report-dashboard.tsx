@@ -991,7 +991,7 @@ function PanoramaCard({
         )}
       </div>
 
-      <div className="relative hidden h-[500px] bg-slate-950 sm:block">
+      <div className="relative hidden aspect-square bg-slate-950 sm:block">
         {sectorLayout.length ? (
           sectorLayout.map(({ item: sector, rect }) => {
             const sectorArea = rect.width * rect.height;
@@ -1162,7 +1162,7 @@ function SectorPanoramaCard({
         </div>
       </div>
 
-      <div className="relative h-[330px] bg-slate-950 sm:h-[370px]">
+      <div className="relative aspect-square bg-slate-950">
         {layout.length ? (
           layout.map(({ item: sector, rect }) => (
             <SectorPanoramaTile key={`${market}-${sector.name}`} sector={sector} rect={rect} />
