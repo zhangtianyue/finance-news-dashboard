@@ -1063,7 +1063,7 @@ function PanoramaCard({
 
 function MarketPanorama({ snapshot }: { snapshot: StockHeatSnapshot | null }) {
   return (
-    <div className="mb-5 grid gap-4 2xl:grid-cols-2">
+    <div className="mb-5 grid gap-4">
       <PanoramaCard
         market="A股"
         items={snapshot?.aSharePanorama ?? []}
@@ -1188,7 +1188,7 @@ function SectorPanoramaCard({
 
 function MarketSectorPanorama({ snapshot }: { snapshot: StockHeatSnapshot | null }) {
   return (
-    <div className="mb-5 grid gap-4 xl:grid-cols-2">
+    <div className="mb-5 grid gap-4">
       <SectorPanoramaCard
         market="A股"
         sectors={snapshot?.aShareSectors ?? []}
