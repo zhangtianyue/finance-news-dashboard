@@ -25,7 +25,8 @@ const dashboardViews = new Set<DashboardView>([
 const marketHeatModes = new Set<MarketHeatMode>([
   "stocks",
   "sectors",
-  "panorama",
+  "stock-panorama",
+  "sector-panorama",
   "events",
 ]);
 
@@ -42,9 +43,11 @@ async function parseDashboardParams(searchParams: HomeProps["searchParams"]) {
       ? (viewParam as DashboardView)
       : "report";
   const initialMarketHeatMode =
-    heatParam && marketHeatModes.has(heatParam as MarketHeatMode)
-      ? (heatParam as MarketHeatMode)
-      : "stocks";
+    heatParam === "panorama"
+      ? "stock-panorama"
+      : heatParam && marketHeatModes.has(heatParam as MarketHeatMode)
+        ? (heatParam as MarketHeatMode)
+        : "stocks";
 
   return { initialView, initialMarketHeatMode };
 }
