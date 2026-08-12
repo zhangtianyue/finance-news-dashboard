@@ -84,6 +84,7 @@ const fastSourceTimeoutMs = 2000;
 const cacheTimeoutMs = 1200;
 const quoteCacheTtlMs = 45000;
 const applyStatusCacheTtlMs = 10 * 60 * 1000;
+const applyStatusFallbackTtlMs = 60 * 1000;
 const execFileAsync = promisify(execFile);
 const shareSnapshotPath = join(process.cwd(), "data/runtime/qdii-share-snapshots.json");
 const qdiiQuoteSeedPath = join(process.cwd(), "data/seeds/qdii-quotes.json");
@@ -530,6 +531,34 @@ function selectApplyStatuses(statuses: Map<string, FundApplyStatus>, codes: stri
   );
 }
 
+async function readSeedApplyStatuses(codes: string[]) {
+  const seed = await readQdiiQuoteSeed();
+  const seedDate = seed?.updatedAt?.slice(0, 10) ?? null;
+  const statuses = new Map<string, FundApplyStatus>();
+
+  for (const code of codes) {
+    const quote = seed?.quotes[code];
+    if (!quote || (!quote.subscriptionStatus && !quote.redemptionStatus)) continue;
+
+    statuses.set(code, {
+      subscriptionStatus: quote.subscriptionStatus,
+      redemptionStatus: quote.redemptionStatus,
+      subscriptionOpen: quote.subscriptionOpen,
+      subscriptionDate: quote.subscriptionDate ?? seedDate,
+      subscriptionMinAmount: quote.subscriptionMinAmount,
+      dailySubscriptionCount: quote.dailySubscriptionCount,
+      dailySubscriptionLimit: quote.dailySubscriptionLimit,
+      subscriptionSource: quote.subscriptionSource ?? "最近申购状态快照",
+      subscriptionSourceUrl: quote.subscriptionSourceUrl ?? "https://fund.eastmoney.com/",
+      subscriptionNote: quote.subscriptionNote
+        ? `批量接口暂时不可用，已保留最近快照：${quote.subscriptionNote}`
+        : "批量接口暂时不可用，已保留最近申购状态快照",
+    });
+  }
+
+  return statuses;
+}
+
 async function fetchFundApplyStatuses(
   codes: string[],
   options: { allowFallback?: boolean; timeoutMs?: number } = {},
@@ -543,11 +572,17 @@ async function fetchFundApplyStatuses(
     applyStatusRefreshPromise = (async () => {
       const freshStatuses = await fetchFundApplyStatusesFromSources(codes, options);
       const mergedStatuses = new Map(previousStatuses);
+      const seedStatuses = await readSeedApplyStatuses(codes);
+      for (const [code, status] of seedStatuses) {
+        if (!mergedStatuses.has(code)) mergedStatuses.set(code, status);
+      }
       for (const [code, status] of freshStatuses) mergedStatuses.set(code, status);
 
       if (mergedStatuses.size > 0) {
         applyStatusCache = {
-          expiresAt: Date.now() + applyStatusCacheTtlMs,
+          expiresAt:
+            Date.now() +
+            (freshStatuses.size > 0 ? applyStatusCacheTtlMs : applyStatusFallbackTtlMs),
           statuses: mergedStatuses,
         };
       }
