@@ -8,6 +8,7 @@ import {
   searchPopularInstruments,
   type InstrumentOption,
 } from "@/lib/instrument-catalog";
+import { calculateXirr } from "@/lib/financial-math";
 
 type DcaFrequency = "monthly" | "weekly" | "daily";
 type PriceSource = "remote" | "csv";
@@ -50,7 +51,7 @@ type DcaResult = {
   invested: number;
   finalValue: number;
   totalReturn: number;
-  cagr: number;
+  annualizedReturn: number | null;
   maxDrawdown: number;
   shares: number;
   trades: DcaTrade[];
@@ -165,13 +166,20 @@ function runDcaBacktest(
   let shares = 0;
   let invested = 0;
   let nextBuyDate = stripTime(settings.startDate);
-  let peakValue = 0;
+  let fundUnits = 0;
+  let peakUnitValue = 1;
   let maxDrawdown = 0;
   const series: DcaSeriesPoint[] = [];
   const trades: DcaTrade[] = [];
 
   function executeBuy(point: PricePoint) {
     const cashToInvest = settings.amount - settings.fee;
+    const valueBeforeContribution = shares * point.close;
+    const issuePrice =
+      fundUnits > 0 && valueBeforeContribution > 0
+        ? valueBeforeContribution / fundUnits
+        : 1;
+    fundUnits += settings.amount / issuePrice;
     const sharesBought = cashToInvest / point.close;
     shares += sharesBought;
     invested += settings.amount;
@@ -198,9 +206,12 @@ function runDcaBacktest(
     }
 
     const value = shares * point.close;
-    peakValue = Math.max(peakValue, value);
-    const drawdown = peakValue > 0 ? (value - peakValue) / peakValue : 0;
-    maxDrawdown = Math.min(maxDrawdown, drawdown);
+    if (fundUnits > 0) {
+      const unitValue = value / fundUnits;
+      peakUnitValue = Math.max(peakUnitValue, unitValue);
+      const drawdown = (unitValue - peakUnitValue) / peakUnitValue;
+      maxDrawdown = Math.min(maxDrawdown, drawdown);
+    }
 
     series.push({
       date: point.date,
@@ -213,11 +224,10 @@ function runDcaBacktest(
   const firstDate = prices[0].date;
   const lastDate = prices.at(-1)?.date ?? firstDate;
   const totalReturn = invested > 0 ? finalValue / invested - 1 : 0;
-  const years = Math.max(
-    (lastDate.getTime() - firstDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000),
-    1 / 365,
-  );
-  const cagr = invested > 0 ? Math.pow(finalValue / invested, 1 / years) - 1 : 0;
+  const annualizedReturn = calculateXirr([
+    ...trades.map((trade) => ({ date: trade.date, amount: -trade.invested })),
+    { date: lastDate, amount: finalValue },
+  ]);
 
   return {
     symbol,
@@ -228,7 +238,7 @@ function runDcaBacktest(
     invested,
     finalValue,
     totalReturn,
-    cagr,
+    annualizedReturn,
     maxDrawdown,
     shares,
     trades,
@@ -1065,9 +1075,16 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
               tone={result ? (result.totalReturn >= 0 ? "positive" : "negative") : undefined}
             />
             <MetricCard
-              label="年化收益率"
-              value={result ? formatPercent(result.cagr) : "N/A"}
-              tone={result ? (result.cagr >= 0 ? "positive" : "negative") : undefined}
+              label="资金加权年化"
+              value={result?.annualizedReturn != null ? formatPercent(result.annualizedReturn) : "N/A"}
+              caption="XIRR"
+              tone={
+                result?.annualizedReturn != null
+                  ? result.annualizedReturn >= 0
+                    ? "positive"
+                    : "negative"
+                  : undefined
+              }
             />
             <MetricCard
               label="最大回撤"

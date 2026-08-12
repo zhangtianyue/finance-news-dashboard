@@ -21,7 +21,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   GlobalValuationSnapshot,
   IndexValuation,
@@ -2404,6 +2404,7 @@ export function ReportDashboard({
   const [dividendSnapshot, setDividendSnapshot] = useState<AshareDividendSnapshot | null>(null);
   const [isDividendLoading, setIsDividendLoading] = useState(false);
   const [dividendMessage, setDividendMessage] = useState<string | null>(null);
+  const hasAutoRefreshedDividends = useRef(false);
   const [marketHeatMode, setMarketHeatMode] =
     useState<MarketHeatMode>(initialMarketHeatMode);
   const [stockHeatSnapshot, setStockHeatSnapshot] = useState<StockHeatSnapshot | null>(null);
@@ -2572,7 +2573,7 @@ export function ReportDashboard({
     }
   }
 
-  async function refreshDividendStocks(force = false) {
+  const refreshDividendStocks = useCallback(async function refreshDividendStocks(force = false) {
     setIsDividendLoading(true);
     setDividendMessage(`正在更新 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司...`);
 
@@ -2586,13 +2587,19 @@ export function ReportDashboard({
       const data = (await response.json()) as AshareDividendSnapshot;
       setDividendSnapshot(data);
       setDividendMessage(data.message);
+      if (!force && data.cacheState === "stale" && !hasAutoRefreshedDividends.current) {
+        hasAutoRefreshedDividends.current = true;
+        window.setTimeout(() => {
+          void refreshDividendStocks(true);
+        }, 0);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "A 股股息率更新失败";
       setDividendMessage(`${message}，不影响其他栏目使用`);
     } finally {
       setIsDividendLoading(false);
     }
-  }
+  }, []);
 
   async function refreshPolymarketHotspots() {
     setIsPolymarketLoading(true);
@@ -2697,7 +2704,7 @@ export function ReportDashboard({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [activeView, dividendSnapshot, isDividendLoading]);
+  }, [activeView, dividendSnapshot, isDividendLoading, refreshDividendStocks]);
 
   useEffect(() => {
     if (

@@ -42,6 +42,7 @@ export type AshareDividendSnapshot = {
   continuityYears: number;
   minimumYield: number;
   rows: AshareDividendCompany[];
+  cacheState?: "live" | "fresh" | "stale";
 };
 
 type EastmoneyResponse<T> = {
@@ -81,6 +82,7 @@ type EastmoneyDividendRow = {
 
 const eastmoneyEndpoint = "https://datacenter-web.eastmoney.com/api/data/v1/get";
 const timeoutMs = 8000;
+const cacheTimeoutMs = 1500;
 const dividendPageSize = 500;
 const dividendSnapshotTtlMs = 10 * 60 * 1000;
 const dividendSnapshotPath = join(process.cwd(), "data/runtime/a-share-dividends.json");
@@ -95,6 +97,7 @@ let memorySnapshot:
       payload: AshareDividendSnapshot;
     }
   | null = null;
+let dividendRefreshPromise: Promise<AshareDividendSnapshot> | null = null;
 
 function numberOrNull(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -154,20 +157,27 @@ async function upstashCommand<T>(command: unknown[]) {
   const config = redisConfig();
   if (!config) return null;
 
-  const response = await fetch(config.url, {
-    method: "POST",
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-  });
-  const payload = (await response.json()) as { result?: T; error?: string };
-  if (!response.ok || payload.error) {
-    throw new Error(payload.error ?? `Upstash request failed: ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), cacheTimeoutMs);
+  try {
+    const response = await fetch(config.url, {
+      method: "POST",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    });
+    const payload = (await response.json()) as { result?: T; error?: string };
+    if (!response.ok || payload.error) {
+      throw new Error(payload.error ?? `Upstash request failed: ${response.status}`);
+    }
+    return payload.result ?? null;
+  } finally {
+    clearTimeout(timeout);
   }
-  return payload.result ?? null;
 }
 
 function isSnapshot(value: unknown): value is AshareDividendSnapshot {
@@ -185,10 +195,15 @@ function isFresh(snapshot: AshareDividendSnapshot) {
   return Number.isFinite(updatedTime) && Date.now() - updatedTime < dividendSnapshotTtlMs;
 }
 
-function withCacheMessage(snapshot: AshareDividendSnapshot, prefix = "已显示最近缓存") {
+function withCacheMessage(
+  snapshot: AshareDividendSnapshot,
+  prefix = "已显示最近缓存",
+  cacheState: AshareDividendSnapshot["cacheState"] = snapshot.cacheState ?? "fresh",
+) {
   return {
     ...snapshot,
     message: `${prefix}：${snapshot.message}`,
+    cacheState,
   } satisfies AshareDividendSnapshot;
 }
 
@@ -552,7 +567,7 @@ export async function fetchAshareDividendSnapshot(
   const now = Date.now();
 
   if (!force && memorySnapshot && memorySnapshot.expiresAt > now) {
-    return withCacheMessage(memorySnapshot.payload);
+    return withCacheMessage(memorySnapshot.payload, "已显示最近缓存", "fresh");
   }
 
   const savedSnapshot = await readSavedSnapshot();
@@ -561,30 +576,50 @@ export async function fetchAshareDividendSnapshot(
       expiresAt: now + dividendSnapshotTtlMs,
       payload: savedSnapshot,
     };
-    return withCacheMessage(savedSnapshot);
+    return withCacheMessage(savedSnapshot, "已显示最近缓存", "fresh");
   }
 
   if (!force && savedSnapshot) {
+    const staleSnapshot = { ...savedSnapshot, cacheState: "stale" as const };
     memorySnapshot = {
       expiresAt: now + dividendSnapshotTtlMs,
-      payload: savedSnapshot,
+      payload: staleSnapshot,
     };
-    return withCacheMessage(savedSnapshot, "已快速显示最近缓存，手动刷新可尝试更新");
+    return withCacheMessage(staleSnapshot, "已快速显示最近缓存，正在后台尝试更新");
   }
 
-  try {
-    const snapshot = await buildAshareDividendSnapshot();
-    memorySnapshot = {
-      expiresAt: now + dividendSnapshotTtlMs,
-      payload: snapshot,
-    };
-    await writeSavedSnapshot(snapshot);
-    return snapshot;
-  } catch (error) {
-    if (savedSnapshot) {
-      const message = error instanceof Error ? error.message : "数据源暂时不可用";
-      return withCacheMessage(savedSnapshot, `A 股股息率更新失败，已显示最近缓存（${message}）`);
+  if (dividendRefreshPromise) return dividendRefreshPromise;
+
+  dividendRefreshPromise = (async () => {
+    try {
+      const snapshot = {
+        ...(await buildAshareDividendSnapshot()),
+        cacheState: "live" as const,
+      };
+      memorySnapshot = {
+        expiresAt: Date.now() + dividendSnapshotTtlMs,
+        payload: snapshot,
+      };
+      await writeSavedSnapshot(snapshot);
+      return snapshot;
+    } catch (error) {
+      if (savedSnapshot) {
+        const message = error instanceof Error ? error.message : "数据源暂时不可用";
+        const staleSnapshot = { ...savedSnapshot, cacheState: "stale" as const };
+        memorySnapshot = {
+          expiresAt: Date.now() + dividendSnapshotTtlMs,
+          payload: staleSnapshot,
+        };
+        return withCacheMessage(
+          staleSnapshot,
+          `A 股股息率更新失败，已显示最近缓存（${message}）`,
+        );
+      }
+      throw error;
     }
-    throw error;
-  }
+  })().finally(() => {
+    dividendRefreshPromise = null;
+  });
+
+  return dividendRefreshPromise;
 }

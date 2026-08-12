@@ -8,7 +8,13 @@
     "start": "next start",
     "lint": "eslint",
     "qdii:rotation": "node scripts/qdii-sp500-rotation.mjs",
-    "qdii:rotation:test": "node scripts/qdii-sp500-rotation.mjs --self-test"
+    "qdii:rotation:empty": "node scripts/qdii-sp500-rotation.mjs --current-holding none",
+    "qdii:mode:risk-on": "node scripts/qdii-sp500-rotation.mjs --set-risk-mode risk_on",
+    "qdii:mode:neutral": "node scripts/qdii-sp500-rotation.mjs --set-risk-mode neutral",
+    "qdii:mode:risk-off": "node scripts/qdii-sp500-rotation.mjs --set-risk-mode risk_off",
+    "qdii:mode:symmetric": "node scripts/qdii-sp500-rotation.mjs --set-risk-mode symmetric",
+    "qdii:rotation:test": "node scripts/qdii-sp500-rotation.mjs --self-test",
+    "dca:metrics:test": "node --no-warnings scripts/dca-metrics-self-test.mjs"
   },
   "dependencies": {
     "lucide-react": "^1.18.0",

@@ -83,6 +83,7 @@ const timeoutMs = 8000;
 const fastSourceTimeoutMs = 2000;
 const cacheTimeoutMs = 1200;
 const quoteCacheTtlMs = 45000;
+const applyStatusCacheTtlMs = 10 * 60 * 1000;
 const execFileAsync = promisify(execFile);
 const shareSnapshotPath = join(process.cwd(), "data/runtime/qdii-share-snapshots.json");
 const qdiiQuoteSeedPath = join(process.cwd(), "data/seeds/qdii-quotes.json");
@@ -102,6 +103,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 let qdiiQuoteCache: { expiresAt: number; payload: QdiiQuotesResponse } | null = null;
+let applyStatusCache: { expiresAt: number; statuses: Map<string, FundApplyStatus> } | null = null;
+let applyStatusRefreshPromise: Promise<Map<string, FundApplyStatus>> | null = null;
 let curlAvailability: Promise<boolean> | null = null;
 
 function withTimeout(durationMs = timeoutMs) {
@@ -131,6 +134,7 @@ async function fetchWithCurl(
   const headerArgs = Object.entries(headers).flatMap(([key, value]) => ["-H", `${key}: ${value}`]);
   const args = [
     "-sS",
+    "--fail-with-body",
     "--http1.1",
     "--compressed",
     "--max-time",
@@ -233,12 +237,15 @@ async function fetchJson<T>(
         signal: controller.signal,
         headers,
       });
+      if (!response.ok) throw new Error(`request failed with HTTP ${response.status}`);
       return (await response.json()) as T;
     } finally {
       done();
     }
-  } catch {
-    if (options.curlFallback === false) throw new Error("request timed out");
+  } catch (error) {
+    if (options.curlFallback === false) {
+      throw error instanceof Error ? error : new Error("request failed");
+    }
     const stdout = await fetchWithCurl(url, headers, 1024 * 1024 * 4, options.timeoutMs);
     return JSON.parse(stdout) as T;
   }
@@ -257,12 +264,15 @@ async function fetchText(
         signal: controller.signal,
         headers,
       });
+      if (!response.ok) throw new Error(`request failed with HTTP ${response.status}`);
       return await response.text();
     } finally {
       done();
     }
-  } catch {
-    if (options.curlFallback === false) throw new Error("request timed out");
+  } catch (error) {
+    if (options.curlFallback === false) {
+      throw error instanceof Error ? error : new Error("request failed");
+    }
     return fetchWithCurl(url, headers, 1024 * 1024 * 8, options.timeoutMs);
   }
 }
@@ -472,7 +482,7 @@ async function fetchF10TradingStatus(code: string) {
   }
 }
 
-async function fetchFundApplyStatuses(
+async function fetchFundApplyStatusesFromSources(
   codes: string[],
   options: { allowFallback?: boolean; timeoutMs?: number } = {},
 ) {
@@ -505,9 +515,49 @@ async function fetchFundApplyStatuses(
 
     return statuses;
   } catch {
+    if (!options.allowFallback) return new Map<string, FundApplyStatus>();
     const fallbackStatuses = await runLimited(codes, 6, fetchF10TradingStatus);
     return new Map(fallbackStatuses.filter((entry): entry is readonly [string, FundApplyStatus] => entry[1] != null));
   }
+}
+
+function selectApplyStatuses(statuses: Map<string, FundApplyStatus>, codes: string[]) {
+  return new Map(
+    codes.flatMap((code) => {
+      const status = statuses.get(code);
+      return status ? ([[code, status]] as const) : [];
+    }),
+  );
+}
+
+async function fetchFundApplyStatuses(
+  codes: string[],
+  options: { allowFallback?: boolean; timeoutMs?: number } = {},
+) {
+  if (applyStatusCache && applyStatusCache.expiresAt > Date.now()) {
+    return selectApplyStatuses(applyStatusCache.statuses, codes);
+  }
+
+  if (!applyStatusRefreshPromise) {
+    const previousStatuses = applyStatusCache?.statuses ?? new Map<string, FundApplyStatus>();
+    applyStatusRefreshPromise = (async () => {
+      const freshStatuses = await fetchFundApplyStatusesFromSources(codes, options);
+      const mergedStatuses = new Map(previousStatuses);
+      for (const [code, status] of freshStatuses) mergedStatuses.set(code, status);
+
+      if (mergedStatuses.size > 0) {
+        applyStatusCache = {
+          expiresAt: Date.now() + applyStatusCacheTtlMs,
+          statuses: mergedStatuses,
+        };
+      }
+      return mergedStatuses;
+    })().finally(() => {
+      applyStatusRefreshPromise = null;
+    });
+  }
+
+  return selectApplyStatuses(await applyStatusRefreshPromise, codes);
 }
 
 async function readShareSnapshots() {
@@ -890,7 +940,10 @@ export async function GET(request: NextRequest) {
     fetchTencentQuotes(codes, { timeoutMs: sourceTimeout }),
     fallbackQuoteTask,
     shareInfoTask,
-    fetchFundApplyStatuses(codes, { timeoutMs: sourceTimeout }),
+    fetchFundApplyStatuses(codes, {
+      timeoutMs: sourceTimeout,
+      allowFallback: loadSlowFallbacks,
+    }),
   ]);
   const [sinaQuotes, dailyQuotes, mobileEstimates, estimates] = fallbackQuotes;
   const dailyQuoteMap = new Map(dailyQuotes);

@@ -73,6 +73,7 @@ type StockHeatCandidate = {
   amplitude: number | null;
   marketCap: number | null;
   quoteTimestamp: number | null;
+  quoteTimeLabel?: string;
   quoteUrl: string;
 };
 
@@ -290,7 +291,8 @@ function toStockHeatItems(candidates: RankedStockCandidate[]) {
       heatScore: candidate.heatScore,
       heatLevel: candidate.heatLevel,
       signals: candidate.signals,
-      quoteTimeLabel: shanghaiDateTimeFromSeconds(candidate.quoteTimestamp),
+      quoteTimeLabel:
+        candidate.quoteTimeLabel ?? shanghaiDateTimeFromSeconds(candidate.quoteTimestamp),
       quoteUrl: candidate.quoteUrl,
     }));
 }
@@ -559,7 +561,7 @@ async function fetchNasdaqUsCandidates() {
       ? payload.data.rows.filter(isRecord)
       : [];
   if (!rows.length) throw new Error("Nasdaq 美股行情返回为空");
-  const quoteTimestamp = Math.floor(Date.now() / 1000);
+  const fetchedAtLabel = `抓取时间 ${shanghaiDateTimeFromSeconds(Math.floor(Date.now() / 1000))}`;
 
   return rows
     .map<StockHeatCandidate | null>((row) => {
@@ -597,7 +599,8 @@ async function fetchNasdaqUsCandidates() {
         volumeRatio: null,
         amplitude: null,
         marketCap,
-        quoteTimestamp,
+        quoteTimestamp: null,
+        quoteTimeLabel: fetchedAtLabel,
         quoteUrl: stringOrNull(row.url)
           ? `https://www.nasdaq.com${stringOrNull(row.url)}`
           : nasdaqSourceUrl,

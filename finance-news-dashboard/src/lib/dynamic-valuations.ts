@@ -18,6 +18,7 @@ type StockAnalysisSource = {
 };
 
 const timeoutMs = 5500;
+const cacheTimeoutMs = 1500;
 const snapshotTtlMs = 60 * 60 * 1000;
 const valuationSnapshotPath = join(process.cwd(), "data/runtime/global-valuations.json");
 const valuationSnapshotRedisKey = "global-valuations:snapshot:v1";
@@ -42,6 +43,7 @@ let memorySnapshot:
       payload: GlobalValuationSnapshot;
     }
   | null = null;
+let valuationRefreshPromise: Promise<GlobalValuationSnapshot> | null = null;
 
 function redisConfig() {
   const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
@@ -53,20 +55,27 @@ async function upstashCommand<T>(command: unknown[]) {
   const config = redisConfig();
   if (!config) return null;
 
-  const response = await fetch(config.url, {
-    method: "POST",
-    cache: "no-store",
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(command),
-  });
-  const payload = (await response.json()) as { result?: T; error?: string };
-  if (!response.ok || payload.error) {
-    throw new Error(payload.error ?? `Upstash request failed: ${response.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), cacheTimeoutMs);
+  try {
+    const response = await fetch(config.url, {
+      method: "POST",
+      cache: "no-store",
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    });
+    const payload = (await response.json()) as { result?: T; error?: string };
+    if (!response.ok || payload.error) {
+      throw new Error(payload.error ?? `Upstash request failed: ${response.status}`);
+    }
+    return payload.result ?? null;
+  } finally {
+    clearTimeout(timeout);
   }
-  return payload.result ?? null;
 }
 
 function withTimeout() {
@@ -343,24 +352,32 @@ export async function getDynamicGlobalValuationSnapshot(options: { force?: boole
     return withCurrentStaticParts(savedSnapshot, "cached");
   }
 
-  const base = createGlobalValuationSnapshot();
-  const metrics = (await Promise.all([fetchSp500Metric(), fetchStockAnalysisMetrics()]))
-    .flat()
-    .filter((metric): metric is DynamicMetric => metric != null);
-  const snapshot = applyMetrics(base, metrics);
+  if (valuationRefreshPromise) return valuationRefreshPromise;
 
-  if ((snapshot.dynamicFields ?? 0) > 0) {
-    memorySnapshot = {
-      expiresAt: now + snapshotTtlMs,
-      payload: snapshot,
-    };
-    await writeSavedSnapshot(snapshot);
+  valuationRefreshPromise = (async () => {
+    const base = createGlobalValuationSnapshot();
+    const metrics = (await Promise.all([fetchSp500Metric(), fetchStockAnalysisMetrics()]))
+      .flat()
+      .filter((metric): metric is DynamicMetric => metric != null);
+    const snapshot = applyMetrics(base, metrics);
+
+    if ((snapshot.dynamicFields ?? 0) > 0) {
+      memorySnapshot = {
+        expiresAt: Date.now() + snapshotTtlMs,
+        payload: snapshot,
+      };
+      await writeSavedSnapshot(snapshot);
+      return snapshot;
+    }
+
+    if (savedSnapshot) {
+      return withCurrentStaticParts(savedSnapshot, "cached");
+    }
+
     return snapshot;
-  }
+  })().finally(() => {
+    valuationRefreshPromise = null;
+  });
 
-  if (savedSnapshot) {
-    return withCurrentStaticParts(savedSnapshot, "cached");
-  }
-
-  return snapshot;
+  return valuationRefreshPromise;
 }
