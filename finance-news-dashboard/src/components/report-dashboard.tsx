@@ -38,6 +38,7 @@ import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 import type { MarketPulseItem, MorningCalendarItem } from "@/lib/morning-market";
 import type { PolymarketHotItem, PolymarketHotSnapshot } from "@/lib/polymarket-hot";
 import type { StockHeatItem, StockHeatSector, StockHeatSnapshot } from "@/lib/stock-heat";
+import crossMarketSnapshot from "@/generated/cross-market-snapshot.json";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn"];
 export type DashboardView =
@@ -46,6 +47,7 @@ export type DashboardView =
   | "qdii"
   | "dividends"
   | "polymarket"
+  | "cross-market"
   | "dca";
 export type MarketHeatMode =
   | "stocks"
@@ -67,6 +69,7 @@ const dashboardViews = new Set<DashboardView>([
   "qdii",
   "dividends",
   "polymarket",
+  "cross-market",
   "dca",
 ]);
 const marketHeatModes = new Set<MarketHeatMode>([
@@ -119,6 +122,8 @@ function dashboardDocumentTitle(view: DashboardView) {
       return `A 股股息率 > ${ashareDividendMinimumYield}%`;
     case "polymarket":
       return "市场热度";
+    case "cross-market":
+      return "中美板块映射";
     case "dca":
       return "定投回测器";
     default:
@@ -128,6 +133,51 @@ function dashboardDocumentTitle(view: DashboardView) {
 
 function dashboardViewHref(view: DashboardView) {
   return view === "report" ? "/" : `/?view=${view}`;
+}
+
+function CrossMarketPanel() {
+  return (
+    <section aria-label="中美股市板块映射">
+      <div className="mb-3 flex flex-col gap-3 rounded-md border border-slate-200 bg-white px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded bg-slate-900 text-sky-300">
+            <Layers3 className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold text-slate-950">中美主题对照</h2>
+              <span className="rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                研究快照·非实时行情
+              </span>
+            </div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              从 {crossMarketSnapshot.universeCount} 个 A 股板块中筛选 {crossMarketSnapshot.conceptCount} 个主题，
+              对照美股行业与个股。数据生成于 {crossMarketSnapshot.generatedAtLabel}。
+            </p>
+          </div>
+        </div>
+        <a
+          href="/cross-market/index.html"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950"
+          title="在新页面打开中美主题对照"
+        >
+          独立打开
+          <ArrowUpRight className="size-3.5" />
+        </a>
+      </div>
+
+      <div className="h-[78vh] min-h-[680px] overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
+        <iframe
+          src="/cross-market/index.html"
+          title="中美股市板块映射研究看板"
+          loading="lazy"
+          className="h-full w-full border-0 bg-white"
+        />
+      </div>
+    </section>
+  );
 }
 
 function marketHeatModeHref(mode: MarketHeatMode) {
@@ -2751,7 +2801,9 @@ export function ReportDashboard({
             : polymarketSnapshot?.updatedAtLabel ?? "待更新"
           : activeView === "dca"
             ? "按需运行"
-            : valuations.asOfLabel;
+            : activeView === "cross-market"
+              ? crossMarketSnapshot.generatedAtLabel
+              : valuations.asOfLabel;
 
   const activeTitle = dashboardDocumentTitle(activeView);
 
@@ -2767,6 +2819,12 @@ export function ReportDashboard({
       label: "市场热度",
       icon: <Activity className="size-3.5" />,
       title: "查看 A 股、美股和预测市场热点",
+    },
+    {
+      view: "cross-market",
+      label: "中美映射",
+      icon: <Layers3 className="size-3.5" />,
+      title: "查看 A 股热点板块与美股主题的映射关系",
     },
     {
       view: "valuation",
@@ -2890,7 +2948,7 @@ export function ReportDashboard({
                 {dashboardTheme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </button>
             </div>
-            <nav className="grid grid-cols-3 gap-1 border-t border-slate-200 bg-slate-50 p-2" aria-label="主导航">
+            <nav className="grid grid-cols-4 gap-1 border-t border-slate-200 bg-slate-50 p-2" aria-label="主导航">
               {navItems.map((item) => (
                 <a
                   key={item.view}
@@ -3233,6 +3291,8 @@ export function ReportDashboard({
               />
             )}
           </>
+        ) : activeView === "cross-market" ? (
+          <CrossMarketPanel />
         ) : (
           <DcaBacktestPanel theme={dashboardTheme} />
         )}

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "cross-market:import": "node scripts/import-cross-market-dashboard.mjs",
     "qdii:rotation": "node scripts/qdii-sp500-rotation.mjs",
     "qdii:rotation:empty": "node scripts/qdii-sp500-rotation.mjs --current-holding none",
     "qdii:mode:risk-on": "node scripts/qdii-sp500-rotation.mjs --set-risk-mode risk_on",

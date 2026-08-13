@@ -20,6 +20,7 @@ const dashboardViews = new Set<DashboardView>([
   "qdii",
   "dividends",
   "polymarket",
+  "cross-market",
   "dca",
 ]);
 const marketHeatModes = new Set<MarketHeatMode>([
@@ -62,6 +63,8 @@ function dashboardPageTitle(view: DashboardView) {
       return `A 股股息率 > ${ashareDividendMinimumYield}%`;
     case "polymarket":
       return "市场热度";
+    case "cross-market":
+      return "中美板块映射";
     case "dca":
       return "定投回测器";
     default:

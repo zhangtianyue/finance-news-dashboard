@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta http-equiv="Cache-Control" content="no-store" />
+    <meta name="description" content="中美股市对照大屏" />
+    <title>中美股市对照 · IRONMAN</title>
+    <link rel="stylesheet" href="./assets/styles.css" />
+    <link rel="stylesheet" href="./assets/ironman-brand.css" />
+  </head>
+  <body data-market="cn">
+    <main id="app" aria-live="polite">
+      <section class="loading-state">
+        <div class="loading-title">正在读取中美股市对照</div>
+        <div class="loading-line"></div>
+      </section>
+    </main>
+    <div class="ironman-mark">powered by IRONMAN</div>
+    <script src="./data/dashboard-data.js" defer></script>
+    <script src="./assets/app.js" defer></script>
+  </body>
+</html>

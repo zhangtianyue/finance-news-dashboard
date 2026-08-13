@@ -1,0 +1,42 @@
+/* 交付版只开放原对照页的实时视图，隐藏预测/回测入口。 */
+.mode-switch [data-mode]:not([data-mode="live"]) { display: none !important; }
+.mode-switch { min-width: 88px; }
+.ironman-mark {
+  position: fixed;
+  right: 18px;
+  bottom: 12px;
+  z-index: 999;
+  color: rgba(255, 255, 255, .76);
+  font: 600 11px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+  letter-spacing: .12em;
+  text-transform: lowercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, .7);
+  pointer-events: none;
+}
+@media (max-width: 760px) {
+  .ironman-mark { right: 12px; bottom: 8px; font-size: 10px; }
+}
+
+
+/* The embedded delivery exposes only the live research view. */
+.mode-switch {
+  width: 88px !important;
+  grid-template-columns: 1fr !important;
+}
+.mode-switch .mode-thumb {
+  width: calc(100% - 6px) !important;
+}
+.status-rail,
+.concept-scroll {
+  scrollbar-width: none;
+}
+.status-rail::-webkit-scrollbar,
+.concept-scroll::-webkit-scrollbar {
+  display: none;
+}
+@media (min-width: 721px) {
+  .status-chip {
+    flex: 1 1 0;
+    min-width: 86px;
+  }
+}
