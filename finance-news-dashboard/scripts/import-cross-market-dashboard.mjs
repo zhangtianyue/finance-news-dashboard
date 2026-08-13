@@ -80,6 +80,10 @@ if (data.connectors?.manual_import) {
 }
 
 let appScript = await readFile(path.join(sourceRoot, "assets", "app.js"), "utf8");
+appScript = `if (new URLSearchParams(window.location.search).get("embedded") === "1") {
+  document.documentElement.classList.add("embedded-view");
+}
+${appScript}`;
 appScript = replaceRequired(
   appScript,
   `const resolveModeFromURL = (value) => {
@@ -147,6 +151,25 @@ brandStyles += `
   .status-chip {
     flex: 1 1 0;
     min-width: 86px;
+  }
+}
+@media (max-width: 1180px) {
+  html.embedded-view body {
+    background: var(--us-bg);
+    overflow: auto;
+  }
+  html.embedded-view .app-shell,
+  html.embedded-view .side {
+    height: auto;
+  }
+  html.embedded-view .split-dashboard {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    overflow: visible;
+  }
+  html.embedded-view .us-side {
+    border-right: 0;
+    border-bottom: 1px solid #344052;
   }
 }
 `;

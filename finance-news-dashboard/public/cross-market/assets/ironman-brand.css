@@ -40,3 +40,22 @@
     min-width: 86px;
   }
 }
+@media (max-width: 1180px) {
+  html.embedded-view body {
+    background: var(--us-bg);
+    overflow: auto;
+  }
+  html.embedded-view .app-shell,
+  html.embedded-view .side {
+    height: auto;
+  }
+  html.embedded-view .split-dashboard {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    overflow: visible;
+  }
+  html.embedded-view .us-side {
+    border-right: 0;
+    border-bottom: 1px solid #344052;
+  }
+}

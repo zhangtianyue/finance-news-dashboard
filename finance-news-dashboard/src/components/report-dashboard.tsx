@@ -170,7 +170,7 @@ function CrossMarketPanel() {
 
       <div className="h-[78vh] min-h-[680px] overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm">
         <iframe
-          src="/cross-market/index.html"
+          src="/cross-market/index.html?embedded=1"
           title="中美股市板块映射研究看板"
           loading="lazy"
           className="h-full w-full border-0 bg-white"

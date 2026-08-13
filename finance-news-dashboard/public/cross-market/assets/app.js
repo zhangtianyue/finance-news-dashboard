@@ -1,3 +1,6 @@
+if (new URLSearchParams(window.location.search).get("embedded") === "1") {
+  document.documentElement.classList.add("embedded-view");
+}
 const app = document.querySelector("#app");
 window.__MARKET_LAG_APP_VERSION__ = "20260717-full-market-rescan-v1";
 
