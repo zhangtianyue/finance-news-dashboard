@@ -153,23 +153,99 @@ brandStyles += `
     min-width: 86px;
   }
 }
-@media (max-width: 1180px) {
+@media (min-width: 601px) and (max-width: 1180px) {
   html.embedded-view body {
     background: var(--us-bg);
-    overflow: auto;
+    overflow: hidden;
   }
   html.embedded-view .app-shell,
   html.embedded-view .side {
-    height: auto;
+    height: 100vh;
   }
   html.embedded-view .split-dashboard {
-    grid-template-columns: minmax(0, 1fr);
-    height: auto;
-    overflow: visible;
+    grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr);
+    height: 100vh;
+    overflow: hidden;
   }
   html.embedded-view .us-side {
-    border-right: 0;
-    border-bottom: 1px solid #344052;
+    border-right: 1px solid #344052;
+    border-bottom: 0;
+  }
+  html.embedded-view .side {
+    padding: 14px;
+  }
+  html.embedded-view .us-side {
+    padding-top: 64px;
+  }
+  html.embedded-view .topbar {
+    min-height: 60px;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  html.embedded-view .title-block h1,
+  html.embedded-view .title-block h2 {
+    font-size: 21px;
+  }
+  html.embedded-view .title-block p,
+  html.embedded-view .time-stack {
+    font-size: 11px;
+  }
+  html.embedded-view .status-rail {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+    min-height: 62px;
+    overflow: visible;
+  }
+  html.embedded-view .status-chip {
+    min-width: 0;
+    padding: 7px 6px;
+  }
+  html.embedded-view .panel {
+    padding: 12px;
+  }
+  html.embedded-view .concept-badge {
+    display: none;
+  }
+  html.embedded-view .concept-button {
+    padding: 8px;
+  }
+  html.embedded-view .concept-name {
+    font-size: 12px;
+  }
+  html.embedded-view .concept-name > span {
+    white-space: nowrap;
+  }
+  html.embedded-view .metric {
+    padding: 8px;
+  }
+  html.embedded-view .mapping-row {
+    grid-template-columns: minmax(0, 1fr) 104px 58px;
+    gap: 8px;
+    padding: 9px;
+  }
+  html.embedded-view .mapping-row > :nth-child(1) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  html.embedded-view .mapping-row > :nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  html.embedded-view .mapping-row > :nth-child(3) {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  html.embedded-view .mapping-row > :nth-child(4) {
+    grid-column: 3;
+    grid-row: 1;
+    text-align: right;
+  }
+  html.embedded-view .table-wrap {
+    scrollbar-width: none;
+  }
+  html.embedded-view .table-wrap::-webkit-scrollbar {
+    display: none;
   }
 }
 `;
