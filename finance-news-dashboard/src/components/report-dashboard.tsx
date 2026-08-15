@@ -13,6 +13,8 @@ import {
   LayoutGrid,
   Layers3,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   PiggyBank,
   RefreshCw,
   Rss,
@@ -80,6 +82,7 @@ const marketHeatModes = new Set<MarketHeatMode>([
   "events",
 ]);
 const dashboardThemeStorageKey = "finance-dashboard-theme";
+const dashboardSidebarStorageKey = "finance-dashboard-sidebar-collapsed";
 
 function isDashboardView(value: string | null): value is DashboardView {
   return value != null && dashboardViews.has(value as DashboardView);
@@ -173,6 +176,8 @@ function CrossMarketPanel() {
           src="/cross-market/index.html?embedded=1"
           title="中美股市板块映射研究看板"
           loading="lazy"
+          sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+          referrerPolicy="no-referrer"
           className="h-full w-full border-0 bg-white"
         />
       </div>
@@ -2441,6 +2446,7 @@ export function ReportDashboard({
   const [valuations, setValuations] = useState(initialValuations);
   const [activeView, setActiveView] = useState<DashboardView>(initialView);
   const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("light");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [hasRefreshedValuations, setHasRefreshedValuations] = useState(false);
   const [hasRefreshedQdii, setHasRefreshedQdii] = useState(false);
   const [isValuationLoading, setIsValuationLoading] = useState(false);
@@ -2509,6 +2515,18 @@ export function ReportDashboard({
   const toggleDashboardTheme = useCallback(() => {
     selectDashboardTheme(dashboardTheme === "light" ? "dark" : "light");
   }, [dashboardTheme, selectDashboardTheme]);
+
+  const toggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed((current) => {
+      const next = !current;
+      try {
+        window.localStorage.setItem(dashboardSidebarStorageKey, String(next));
+      } catch {
+        // The sidebar remains usable when storage is blocked by the browser.
+      }
+      return next;
+    });
+  }, []);
 
   async function refreshReport() {
     if (isRefreshing) return;
@@ -2716,6 +2734,19 @@ export function ReportDashboard({
   }, []);
 
   useEffect(() => {
+    let storedValue: string | null = null;
+    try {
+      storedValue = window.localStorage.getItem(dashboardSidebarStorageKey);
+    } catch {
+      return;
+    }
+    if (storedValue !== "true") return;
+
+    const timer = window.setTimeout(() => setIsSidebarCollapsed(true), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (activeView !== "valuation" || hasRefreshedValuations || isValuationLoading) {
       return;
     }
@@ -2855,75 +2886,128 @@ export function ReportDashboard({
   return (
     <main className="dashboard-shell min-h-screen bg-[#eef2f5] text-slate-950">
       <div className="min-h-screen lg:flex">
-        <aside className="hidden h-screen w-52 shrink-0 flex-col border-r border-white/10 bg-[#0b1118] text-white lg:sticky lg:top-0 lg:flex">
-          <div className="flex h-20 items-center gap-3 border-b border-white/10 px-4">
+        <aside
+          className={`relative hidden h-screen shrink-0 flex-col border-r border-white/10 bg-[#0b1118] text-white transition-[width] duration-200 lg:sticky lg:top-0 lg:flex ${
+            isSidebarCollapsed ? "w-[72px]" : "w-52"
+          }`}
+          data-sidebar-collapsed={isSidebarCollapsed ? "true" : "false"}
+        >
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="absolute -right-3 top-7 z-20 flex size-6 items-center justify-center rounded-full border border-slate-600 bg-[#111a24] text-slate-300 shadow-md transition-colors hover:border-sky-400 hover:text-sky-300"
+            aria-label={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+            title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+          >
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen className="size-3.5" />
+            ) : (
+              <PanelLeftClose className="size-3.5" />
+            )}
+          </button>
+
+          <div
+            className={`flex h-20 items-center border-b border-white/10 ${
+              isSidebarCollapsed ? "justify-center px-2" : "gap-3 px-4"
+            }`}
+          >
             <span className="flex size-9 items-center justify-center rounded-md border border-sky-400/30 bg-sky-400/10 text-sky-300">
               <Gauge className="size-5" />
             </span>
-            <div>
-              <div className="font-mono text-xs font-semibold text-sky-300">MARKET DESK</div>
-              <div className="mt-0.5 text-xs text-slate-400">个人市场终端</div>
-            </div>
+            {!isSidebarCollapsed ? (
+              <div>
+                <div className="font-mono text-xs font-semibold text-sky-300">MARKET DESK</div>
+                <div className="mt-0.5 text-xs text-slate-400">个人市场终端</div>
+              </div>
+            ) : null}
           </div>
 
-          <nav className="flex-1 space-y-1 px-2.5 py-5" aria-label="主导航">
+          <nav
+            className={`flex-1 space-y-1 py-5 ${isSidebarCollapsed ? "px-2" : "px-2.5"}`}
+            aria-label="主导航"
+          >
             {navItems.map((item) => (
               <a
                 key={item.view}
                 href={dashboardViewHref(item.view)}
                 onClick={handleViewLinkClick(item.view)}
-                className={`relative flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors ${
+                className={`relative flex h-10 items-center rounded-md text-sm font-medium transition-colors ${
+                  isSidebarCollapsed ? "justify-center px-0" : "gap-3 px-3"
+                } ${
                   activeView === item.view
                     ? "bg-white/10 text-white before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:bg-sky-400"
                     : "text-slate-400 hover:bg-white/5 hover:text-white"
                 }`}
-                title={item.title}
+                title={isSidebarCollapsed ? item.label : item.title}
+                aria-label={isSidebarCollapsed ? item.label : undefined}
               >
                 <span className={activeView === item.view ? "text-sky-300" : "text-slate-500"}>
                   {item.icon}
                 </span>
-                {item.label}
+                {!isSidebarCollapsed ? item.label : null}
               </a>
             ))}
           </nav>
 
-          <div className="border-t border-white/10 p-3">
-            <div className="mb-3 flex items-center gap-2 px-2 text-xs text-slate-400">
-              <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" />
-              数据工作台
-            </div>
-            <div
-              className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-black/20 p-1"
-              role="group"
-              aria-label="外观模式"
-            >
+          <div className={`border-t border-white/10 ${isSidebarCollapsed ? "p-2" : "p-3"}`}>
+            {!isSidebarCollapsed ? (
+              <div className="mb-3 flex items-center gap-2 px-2 text-xs text-slate-400">
+                <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" />
+                数据工作台
+              </div>
+            ) : (
+              <div className="mb-2 flex h-5 items-center justify-center" title="数据工作台">
+                <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" />
+              </div>
+            )}
+            {isSidebarCollapsed ? (
               <button
                 type="button"
-                onClick={() => selectDashboardTheme("light")}
-                aria-pressed={dashboardTheme === "light"}
-                className={`inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors ${
-                  dashboardTheme === "light"
-                    ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white"
-                }`}
+                onClick={toggleDashboardTheme}
+                className="flex h-9 w-full items-center justify-center rounded-md border border-white/10 bg-black/20 text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
+                title={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
+                aria-label={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
               >
-                <Sun className="size-3.5" />
-                浅色
+                {dashboardTheme === "dark" ? (
+                  <Sun className="size-4" />
+                ) : (
+                  <Moon className="size-4" />
+                )}
               </button>
-              <button
-                type="button"
-                onClick={() => selectDashboardTheme("dark")}
-                aria-pressed={dashboardTheme === "dark"}
-                className={`inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors ${
-                  dashboardTheme === "dark"
-                    ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white"
-                }`}
+            ) : (
+              <div
+                className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-black/20 p-1"
+                role="group"
+                aria-label="外观模式"
               >
-                <Moon className="size-3.5" />
-                深色
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => selectDashboardTheme("light")}
+                  aria-pressed={dashboardTheme === "light"}
+                  className={`inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors ${
+                    dashboardTheme === "light"
+                      ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30"
+                      : "text-slate-400 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  <Sun className="size-3.5" />
+                  浅色
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectDashboardTheme("dark")}
+                  aria-pressed={dashboardTheme === "dark"}
+                  className={`inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors ${
+                    dashboardTheme === "dark"
+                      ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30"
+                      : "text-slate-400 hover:bg-white/5 hover:text-white"
+                  }`}
+                >
+                  <Moon className="size-3.5" />
+                  深色
+                </button>
+              </div>
+            )}
           </div>
         </aside>
 
