@@ -17,6 +17,7 @@ type HomeProps = {
 const dashboardViews = new Set<DashboardView>([
   "report",
   "valuation",
+  "stablecoins",
   "qdii",
   "dividends",
   "polymarket",
@@ -57,6 +58,8 @@ function dashboardPageTitle(view: DashboardView) {
   switch (view) {
     case "valuation":
       return "全球指数估值雷达";
+    case "stablecoins":
+      return "全球稳定币规模";
     case "qdii":
       return "大陆上市 QDII ETF";
     case "dividends":

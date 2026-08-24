@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   BadgePercent,
+  CircleDollarSign,
   Clock3,
   FileText,
   Flame,
@@ -40,12 +41,15 @@ import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 import type { MarketPulseItem, MorningCalendarItem } from "@/lib/morning-market";
 import type { PolymarketHotItem, PolymarketHotSnapshot } from "@/lib/polymarket-hot";
 import type { StockHeatItem, StockHeatSector, StockHeatSnapshot } from "@/lib/stock-heat";
+import type { StablecoinSnapshot } from "@/lib/stablecoins";
+import { StablecoinPanel } from "@/components/stablecoin-panel";
 import crossMarketSnapshot from "@/generated/cross-market-snapshot.json";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn"];
 export type DashboardView =
   | "report"
   | "valuation"
+  | "stablecoins"
   | "qdii"
   | "dividends"
   | "polymarket"
@@ -68,6 +72,7 @@ type DashboardNavItem = {
 const dashboardViews = new Set<DashboardView>([
   "report",
   "valuation",
+  "stablecoins",
   "qdii",
   "dividends",
   "polymarket",
@@ -83,6 +88,7 @@ const marketHeatModes = new Set<MarketHeatMode>([
 ]);
 const dashboardThemeStorageKey = "finance-dashboard-theme";
 const dashboardSidebarStorageKey = "finance-dashboard-sidebar-collapsed";
+const stablecoinSnapshotStorageKey = "finance-dashboard-stablecoin-snapshot-v1";
 
 function isDashboardView(value: string | null): value is DashboardView {
   return value != null && dashboardViews.has(value as DashboardView);
@@ -119,6 +125,8 @@ function dashboardDocumentTitle(view: DashboardView) {
   switch (view) {
     case "valuation":
       return "全球指数估值雷达";
+    case "stablecoins":
+      return "全球稳定币规模";
     case "qdii":
       return "大陆上市 QDII ETF";
     case "dividends":
@@ -2453,6 +2461,10 @@ export function ReportDashboard({
   const [valuationMessage, setValuationMessage] = useState<string | null>(
     initialValuations.message ?? null,
   );
+  const [stablecoinSnapshot, setStablecoinSnapshot] = useState<StablecoinSnapshot | null>(null);
+  const [isStablecoinLoading, setIsStablecoinLoading] = useState(false);
+  const [stablecoinMessage, setStablecoinMessage] = useState<string | null>(null);
+  const hasAutoRefreshedStablecoins = useRef(false);
   const [qdiiQuotes, setQdiiQuotes] = useState<Record<string, QdiiEtfQuote>>({});
   const [isQdiiLoading, setIsQdiiLoading] = useState(false);
   const [isQdiiShareLoading, setIsQdiiShareLoading] = useState(false);
@@ -2641,6 +2653,37 @@ export function ReportDashboard({
     }
   }
 
+  const refreshStablecoins = useCallback(async (force = false) => {
+    setIsStablecoinLoading(true);
+    setStablecoinMessage("正在更新美元稳定币规模...");
+
+    try {
+      const response = await fetch(`/api/stablecoins${force ? "?refresh=1" : ""}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) {
+        throw new Error(`稳定币规模更新失败：${response.status}`);
+      }
+      const data = (await response.json()) as StablecoinSnapshot;
+      if (data.status === "empty" || !Array.isArray(data.assets) || !data.assets.length) {
+        throw new Error(data.message || "稳定币接口没有返回有效数据");
+      }
+
+      setStablecoinSnapshot(data);
+      setStablecoinMessage(data.message);
+      try {
+        window.localStorage.setItem(stablecoinSnapshotStorageKey, JSON.stringify(data));
+      } catch {
+        // Live data remains usable when browser storage is unavailable.
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "稳定币规模更新失败";
+      setStablecoinMessage(`${message}，已保留最近一次成功数据`);
+    } finally {
+      setIsStablecoinLoading(false);
+    }
+  }, []);
+
   const refreshDividendStocks = useCallback(async function refreshDividendStocks(force = false) {
     setIsDividendLoading(true);
     setDividendMessage(`正在更新 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司...`);
@@ -2747,6 +2790,28 @@ export function ReportDashboard({
   }, []);
 
   useEffect(() => {
+    try {
+      const storedValue = window.localStorage.getItem(stablecoinSnapshotStorageKey);
+      if (!storedValue) return;
+
+      const parsed = JSON.parse(storedValue) as StablecoinSnapshot;
+      if (!Array.isArray(parsed.assets) || !parsed.assets.length || !parsed.updatedAt) return;
+
+      const timer = window.setTimeout(() => {
+        setStablecoinSnapshot({
+          ...parsed,
+          status: "cached",
+          message: "已显示此设备最近一次缓存，正在后台检查更新。",
+        });
+        setStablecoinMessage("已显示此设备最近一次缓存，正在后台检查更新。");
+      }, 0);
+      return () => window.clearTimeout(timer);
+    } catch {
+      return;
+    }
+  }, []);
+
+  useEffect(() => {
     if (activeView !== "valuation" || hasRefreshedValuations || isValuationLoading) {
       return;
     }
@@ -2757,6 +2822,23 @@ export function ReportDashboard({
 
     return () => window.clearTimeout(timer);
   }, [activeView, hasRefreshedValuations, isValuationLoading]);
+
+  useEffect(() => {
+    if (
+      activeView !== "stablecoins" ||
+      hasAutoRefreshedStablecoins.current ||
+      isStablecoinLoading
+    ) {
+      return;
+    }
+
+    hasAutoRefreshedStablecoins.current = true;
+    const timer = window.setTimeout(() => {
+      void refreshStablecoins();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeView, isStablecoinLoading, refreshStablecoins]);
 
   useEffect(() => {
     if (
@@ -2824,6 +2906,8 @@ export function ReportDashboard({
   const activeTimestamp =
     activeView === "report"
       ? report.generatedAtLabel
+      : activeView === "stablecoins"
+        ? stablecoinSnapshot?.updatedAtLabel ?? "待更新"
       : activeView === "dividends"
         ? dividendSnapshot?.updatedAtLabel ?? "待更新"
         : activeView === "polymarket"
@@ -2862,6 +2946,12 @@ export function ReportDashboard({
       label: "估值雷达",
       icon: <TrendingUp className="size-3.5" />,
       title: "查看全球指数市盈率和估值表",
+    },
+    {
+      view: "stablecoins",
+      label: "稳定币",
+      icon: <CircleDollarSign className="size-3.5" />,
+      title: "查看全球美元稳定币规模、净发行和链上分布",
     },
     {
       view: "qdii",
@@ -3090,6 +3180,17 @@ export function ReportDashboard({
                   <RefreshCw className={`size-4 ${isValuationLoading ? "animate-spin" : ""}`} />
                   {isValuationLoading ? "更新中" : "刷新估值"}
                 </button>
+              ) : activeView === "stablecoins" ? (
+                <button
+                  type="button"
+                  onClick={() => refreshStablecoins(true)}
+                  disabled={isStablecoinLoading}
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  title="重新拉取美元稳定币规模、净发行和链上分布"
+                >
+                  <RefreshCw className={`size-4 ${isStablecoinLoading ? "animate-spin" : ""}`} />
+                  {isStablecoinLoading ? "更新中" : "刷新稳定币"}
+                </button>
               ) : activeView === "qdii" ? (
                 <button
                   type="button"
@@ -3249,6 +3350,12 @@ export function ReportDashboard({
               message={valuationMessage}
             />
           </>
+        ) : activeView === "stablecoins" ? (
+          <StablecoinPanel
+            snapshot={stablecoinSnapshot}
+            isLoading={isStablecoinLoading}
+            message={stablecoinMessage}
+          />
         ) : activeView === "qdii" ? (
           <QdiiEtfGroups
             groups={valuations.qdiiGroups}
