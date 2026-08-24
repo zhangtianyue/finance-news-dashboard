@@ -106,12 +106,12 @@ function SummaryCard({
   className?: string;
 }) {
   return (
-    <article className={`rounded-md border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5 ${className}`}>
+    <article className={`min-w-0 px-4 py-3 sm:px-5 ${className}`}>
       <div className="text-xs font-semibold text-slate-500">{label}</div>
-      <div className={`mt-2 font-mono text-2xl font-semibold tracking-normal ${valueClassName}`}>
+      <div className={`mt-1.5 truncate font-mono text-xl font-semibold tracking-normal ${valueClassName}`}>
         {value}
       </div>
-      <div className="mt-1.5 text-xs leading-5 text-slate-500">{detail}</div>
+      <div className="mt-1 truncate text-[11px] leading-4 text-slate-500">{detail}</div>
     </article>
   );
 }
@@ -350,35 +350,39 @@ export function StablecoinPanel({
     <>
       <SnapshotNotice snapshot={snapshot} isLoading={isLoading} message={message} />
 
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-5">
+      <div className="mb-5 grid grid-cols-2 overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm md:grid-cols-5 md:divide-x md:divide-slate-200">
         <SummaryCard
           label="美元稳定币总规模"
           value={formatUsd(snapshot.totalMarketCap)}
           detail={`覆盖 ${snapshot.trackedCount} 种美元锚定资产`}
+          className="border-b border-slate-200 md:border-b-0"
         />
         <SummaryCard
           label="1日净发行"
           value={formatSignedUsd(snapshot.change1d)}
           detail={formatSignedPct(snapshot.change1dPct)}
           valueClassName={changeClass(snapshot.change1d)}
+          className="border-b border-l border-slate-200 md:border-b-0 md:border-l-0"
         />
         <SummaryCard
           label="7日净发行"
           value={formatSignedUsd(snapshot.change7d)}
           detail={formatSignedPct(snapshot.change7dPct)}
           valueClassName={changeClass(snapshot.change7d)}
+          className="border-b border-slate-200 md:border-b-0"
         />
         <SummaryCard
           label="30日净发行"
           value={formatSignedUsd(snapshot.change30d)}
           detail={formatSignedPct(snapshot.change30dPct)}
           valueClassName={changeClass(snapshot.change30d)}
+          className="border-b border-l border-slate-200 md:border-b-0 md:border-l-0"
         />
         <SummaryCard
           label="前两大集中度"
           value={`${snapshot.topTwoDominance.toFixed(1)}%`}
           detail="USDT 与 USDC 合计占比"
-          className="col-span-2 xl:col-span-1"
+          className="col-span-2 md:col-span-1"
         />
       </div>
 
