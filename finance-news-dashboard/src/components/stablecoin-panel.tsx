@@ -22,10 +22,11 @@ function formatUsd(value: number) {
 }
 
 function formatUsdYi(value: number) {
-  return (value / 100_000_000).toLocaleString("zh-CN", {
+  const formatted = (value / 100_000_000).toLocaleString("zh-CN", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
+  return `${formatted}亿`;
 }
 
 function formatSignedUsd(value: number) {
@@ -165,7 +166,7 @@ function DesktopAssetTable({ assets }: { assets: StablecoinAsset[] }) {
           <tr>
             <th className="w-[5%] px-3 py-3 text-center">排名</th>
             <th className="w-[27%] px-3 py-3">稳定币</th>
-            <th className="w-[16%] px-3 py-3 text-right">流通规模（亿美元）</th>
+            <th className="w-[16%] px-3 py-3 text-right">流通规模</th>
             <th className="w-[11%] px-3 py-3 text-right">1日</th>
             <th className="w-[11%] px-3 py-3 text-right">7日</th>
             <th className="w-[11%] px-3 py-3 text-right">30日</th>
@@ -215,7 +216,7 @@ function MobileAssetList({ assets }: { assets: StablecoinAsset[] }) {
           </div>
           <div className="mt-4 grid grid-cols-4 gap-2 border-t border-slate-100 pt-3 text-right">
             <div className="text-left">
-              <div className="text-[10px] text-slate-500">规模（亿美元）</div>
+              <div className="text-[10px] text-slate-500">规模</div>
               <div className="mt-1 font-mono text-xs font-semibold text-slate-950">{formatUsdYi(asset.marketCap)}</div>
             </div>
             {[
@@ -246,7 +247,7 @@ function ChainDistribution({ snapshot }: { snapshot: StablecoinSnapshot }) {
             <Layers3 className="size-4 text-sky-600" />
             <h2 className="text-sm font-semibold text-slate-950">链上分布</h2>
           </div>
-          <p className="mt-1.5 text-xs leading-5 text-slate-500">按各公链美元稳定币流通规模排序，单位：亿美元</p>
+          <p className="mt-1.5 text-xs leading-5 text-slate-500">按各公链美元稳定币流通规模排序</p>
         </div>
         <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[10px] text-slate-500">
           TOP {snapshot.chains.length}
@@ -359,7 +360,7 @@ export function StablecoinPanel({
 
       <div className="mb-5 grid grid-cols-2 overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm md:grid-cols-5 md:divide-x md:divide-slate-200">
         <SummaryCard
-          label="美元稳定币总规模（亿美元）"
+          label="美元稳定币总规模"
           value={formatUsdYi(snapshot.totalMarketCap)}
           detail={`覆盖 ${snapshot.trackedCount} 种美元锚定资产`}
           className="border-b border-slate-200 md:border-b-0"
