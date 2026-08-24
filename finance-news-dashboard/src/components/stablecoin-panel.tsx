@@ -26,7 +26,7 @@ function formatUsdYi(value: number) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
-  return `${formatted}亿`;
+  return `${formatted}亿美元`;
 }
 
 function formatSignedUsd(value: number) {
@@ -116,7 +116,7 @@ function SummaryCard({
   return (
     <article className={`min-w-0 px-4 py-3 sm:px-5 ${className}`}>
       <div className="text-xs font-semibold text-slate-500">{label}</div>
-      <div className={`mt-1.5 truncate font-mono text-xl font-semibold tracking-normal ${valueClassName}`}>
+      <div className={`mt-1.5 truncate font-mono text-base font-semibold tracking-normal sm:text-xl ${valueClassName}`}>
         {value}
       </div>
       <div className="mt-1 truncate text-[11px] leading-4 text-slate-500">{detail}</div>
