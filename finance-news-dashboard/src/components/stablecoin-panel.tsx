@@ -15,10 +15,17 @@ import type {
 function formatUsd(value: number) {
   const absolute = Math.abs(value);
   const sign = value < 0 ? "-" : "";
-  if (absolute >= 1_000_000_000) return `${sign}$${(absolute / 1_000_000_000).toFixed(2)}B`;
-  if (absolute >= 1_000_000) return `${sign}$${(absolute / 1_000_000).toFixed(1)}M`;
-  if (absolute >= 1_000) return `${sign}$${(absolute / 1_000).toFixed(1)}K`;
-  return `${sign}$${absolute.toFixed(0)}`;
+  if (absolute >= 100_000_000) {
+    const amount = absolute / 100_000_000;
+    return `${sign}${amount.toLocaleString("zh-CN", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: amount < 10 ? 2 : 1,
+    })}亿美元`;
+  }
+  if (absolute >= 10_000) {
+    return `${sign}${Math.round(absolute / 10_000).toLocaleString("zh-CN")}万美元`;
+  }
+  return `${sign}${Math.round(absolute).toLocaleString("zh-CN")}美元`;
 }
 
 function formatUsdYi(value: number) {
@@ -30,7 +37,7 @@ function formatUsdYi(value: number) {
 }
 
 function formatSignedUsd(value: number) {
-  if (Math.abs(value) < 1_000) return "$0";
+  if (Math.abs(value) < 1_000) return "0美元";
   return `${value > 0 ? "+" : ""}${formatUsd(value)}`;
 }
 
