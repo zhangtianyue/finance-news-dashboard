@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   ArrowUpRight,
   BadgePercent,
+  Calculator,
   CircleDollarSign,
   Clock3,
   FileText,
@@ -37,6 +38,7 @@ import {
 } from "@/lib/a-share-dividend-config";
 import type { AshareDividendSnapshot } from "@/lib/a-share-dividends";
 import { DcaBacktestPanel } from "@/components/dca-backtest-panel";
+import { LoanCalculatorPanel } from "@/components/loan-calculator-panel";
 import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 import type { MarketPulseItem, MorningCalendarItem } from "@/lib/morning-market";
 import type { PolymarketHotItem, PolymarketHotSnapshot } from "@/lib/polymarket-hot";
@@ -54,7 +56,8 @@ export type DashboardView =
   | "dividends"
   | "polymarket"
   | "cross-market"
-  | "dca";
+  | "dca"
+  | "loan";
 export type MarketHeatMode =
   | "stocks"
   | "sectors"
@@ -78,6 +81,7 @@ const dashboardViews = new Set<DashboardView>([
   "polymarket",
   "cross-market",
   "dca",
+  "loan",
 ]);
 const marketHeatModes = new Set<MarketHeatMode>([
   "stocks",
@@ -137,6 +141,8 @@ function dashboardDocumentTitle(view: DashboardView) {
       return "中美板块映射";
     case "dca":
       return "定投回测器";
+    case "loan":
+      return "贷款计算器";
     default:
       return "盘前财经早报";
   }
@@ -2916,6 +2922,8 @@ export function ReportDashboard({
             : polymarketSnapshot?.updatedAtLabel ?? "待更新"
           : activeView === "dca"
             ? "按需运行"
+            : activeView === "loan"
+              ? "实时计算"
             : activeView === "cross-market"
               ? crossMarketSnapshot.generatedAtLabel
               : valuations.asOfLabel;
@@ -2970,6 +2978,12 @@ export function ReportDashboard({
       label: "定投回测",
       icon: <PiggyBank className="size-3.5" />,
       title: "查看定投回测器",
+    },
+    {
+      view: "loan",
+      label: "贷款计算",
+      icon: <Calculator className="size-3.5" />,
+      title: "查看贷款还款与提前还款测算",
     },
   ];
 
@@ -3122,7 +3136,7 @@ export function ReportDashboard({
                 {dashboardTheme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </button>
             </div>
-            <nav className="grid grid-cols-4 gap-1 border-t border-slate-200 bg-slate-50 p-2" aria-label="主导航">
+            <nav className="grid grid-cols-3 gap-1 border-t border-slate-200 bg-slate-50 p-2 sm:grid-cols-5" aria-label="主导航">
               {navItems.map((item) => (
                 <a
                   key={item.view}
@@ -3484,8 +3498,10 @@ export function ReportDashboard({
           </>
         ) : activeView === "cross-market" ? (
           <CrossMarketPanel />
-        ) : (
+        ) : activeView === "dca" ? (
           <DcaBacktestPanel theme={dashboardTheme} />
+        ) : (
+          <LoanCalculatorPanel theme={dashboardTheme} />
         )}
           </div>
         </div>

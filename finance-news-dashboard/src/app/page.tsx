@@ -23,6 +23,7 @@ const dashboardViews = new Set<DashboardView>([
   "polymarket",
   "cross-market",
   "dca",
+  "loan",
 ]);
 const marketHeatModes = new Set<MarketHeatMode>([
   "stocks",
@@ -70,6 +71,8 @@ function dashboardPageTitle(view: DashboardView) {
       return "中美板块映射";
     case "dca":
       return "定投回测器";
+    case "loan":
+      return "贷款计算器";
     default:
       return "盘前财经早报";
   }
