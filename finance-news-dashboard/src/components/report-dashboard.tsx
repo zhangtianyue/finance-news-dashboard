@@ -2274,11 +2274,13 @@ export function ReportDashboard({
   initialValuations,
   initialView,
   initialMarketHeatMode,
+  initialToday,
 }: {
   initialReport: MorningReport;
   initialValuations: GlobalValuationSnapshot;
   initialView: DashboardView;
   initialMarketHeatMode: MarketHeatMode;
+  initialToday: string;
 }) {
   const [report, setReport] = useState(initialReport);
   const [valuations, setValuations] = useState(initialValuations);
@@ -2297,7 +2299,6 @@ export function ReportDashboard({
   const hasAutoRefreshedStablecoins = useRef(false);
   const [qdiiQuotes, setQdiiQuotes] = useState<Record<string, QdiiEtfQuote>>({});
   const [isQdiiLoading, setIsQdiiLoading] = useState(false);
-  const [isQdiiShareLoading, setIsQdiiShareLoading] = useState(false);
   const [qdiiMessage, setQdiiMessage] = useState<string | null>(null);
   const [dividendSnapshot, setDividendSnapshot] = useState<AshareDividendSnapshot | null>(null);
   const [isDividendLoading, setIsDividendLoading] = useState(false);
@@ -2313,6 +2314,7 @@ export function ReportDashboard({
   const [polymarketMessage, setPolymarketMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasAutoRefreshedReport = useRef(false);
 
   const switchView = useCallback((view: DashboardView) => {
     setActiveView(view);
@@ -2370,7 +2372,7 @@ export function ReportDashboard({
     });
   }, []);
 
-  async function refreshReport() {
+  const refreshReport = useCallback(async () => {
     if (isRefreshing) return;
     setIsRefreshing(true);
     setError(null);
@@ -2389,33 +2391,7 @@ export function ReportDashboard({
     } finally {
       setIsRefreshing(false);
     }
-  }
-
-  const refreshQdiiShareSnapshots = useCallback(async () => {
-    if (isQdiiShareLoading) return;
-
-    setIsQdiiShareLoading(true);
-    setQdiiMessage("QDII 价格已显示，正在后台补充总份额快照...");
-
-    try {
-      const response = await fetch("/api/qdii/quotes?refreshShares=1", {
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error(`总份额快照更新失败：${response.status}`);
-      }
-      const data = (await response.json()) as {
-        quotes: Record<string, QdiiEtfQuote>;
-      };
-      setQdiiQuotes(enrichQdiiQuotesWithClientSnapshots(data.quotes));
-      setQdiiMessage("QDII 总份额已补充；首次记录表示当前设备或服务端还没有上一条快照。");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "总份额快照更新失败";
-      setQdiiMessage(`${message}，价格和溢价率不受影响`);
-    } finally {
-      setIsQdiiShareLoading(false);
-    }
-  }, [isQdiiShareLoading]);
+  }, [isRefreshing]);
 
   const refreshQdiiQuotes = useCallback(async () => {
     setIsQdiiLoading(true);
@@ -2444,21 +2420,16 @@ export function ReportDashboard({
       setQdiiQuotes(quotes);
       setQdiiMessage(
         needsShareRefresh
-          ? "QDII 价格、溢价率和申购状态已更新；总份额在后台补充"
+          ? "QDII 价格、溢价率和申购状态已更新；总份额使用每日定时快照"
           : "QDII 价格、溢价率和申购状态已更新，总份额使用快照",
       );
-      if (needsShareRefresh) {
-        window.setTimeout(() => {
-          void refreshQdiiShareSnapshots();
-        }, 0);
-      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "QDII 行情更新失败";
       setQdiiMessage(`${message}，已保留列表结构`);
     } finally {
       setIsQdiiLoading(false);
     }
-  }, [refreshQdiiShareSnapshots]);
+  }, []);
 
   async function refreshValuations(force = false) {
     setIsValuationLoading(true);
@@ -2584,6 +2555,24 @@ export function ReportDashboard({
       setIsStockHeatLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (
+      activeView !== "report" ||
+      report.cacheState !== "stale" ||
+      hasAutoRefreshedReport.current ||
+      isRefreshing
+    ) {
+      return;
+    }
+
+    hasAutoRefreshedReport.current = true;
+    const timer = window.setTimeout(() => {
+      void refreshReport();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [activeView, isRefreshing, refreshReport, report.cacheState]);
 
   useEffect(() => {
     const syncViewFromUrl = () => {
@@ -3002,7 +2991,7 @@ export function ReportDashboard({
                   onClick={refreshReport}
                   disabled={isRefreshing}
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
-                  title="重新抓取两路新闻、隔夜行情和今日财经日历"
+                  title="检查并获取最新的两路新闻、隔夜行情和今日财经日历"
                 >
                   <RefreshCw className={`size-4 ${isRefreshing ? "animate-spin" : ""}`} />
                   {isRefreshing ? "刷新中" : "刷新早报"}
@@ -3323,7 +3312,7 @@ export function ReportDashboard({
         ) : activeView === "cross-market" ? (
           <CrossMarketPanel />
         ) : activeView === "dca" ? (
-          <DcaBacktestPanel theme={dashboardTheme} />
+          <DcaBacktestPanel theme={dashboardTheme} initialToday={initialToday} />
         ) : (
           <LoanCalculatorPanel theme={dashboardTheme} />
         )}

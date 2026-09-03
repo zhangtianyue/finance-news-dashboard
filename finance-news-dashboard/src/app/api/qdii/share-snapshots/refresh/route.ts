@@ -4,13 +4,13 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function isAuthorized(request: NextRequest) {
+  if (process.env.NODE_ENV !== "production") return true;
+
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
+  if (!secret) return false;
 
   const auth = request.headers.get("authorization");
-  const querySecret = request.nextUrl.searchParams.get("secret");
-
-  return auth === `Bearer ${secret}` || querySecret === secret;
+  return auth === `Bearer ${secret}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -20,7 +20,11 @@ export async function GET(request: NextRequest) {
 
   const quoteUrl = new URL("/api/qdii/quotes", request.url);
   quoteUrl.searchParams.set("refreshShares", "1");
-  const response = await fetch(quoteUrl, { cache: "no-store" });
+  const authorization = request.headers.get("authorization");
+  const response = await fetch(quoteUrl, {
+    cache: "no-store",
+    headers: authorization ? { authorization } : undefined,
+  });
   const payload = (await response.json()) as {
     updatedAt?: string;
     quotes?: Record<

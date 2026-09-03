@@ -37,6 +37,17 @@ function firstParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function shanghaiDateValue(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 async function parseDashboardParams(searchParams: HomeProps["searchParams"]) {
   const params = await searchParams;
   const viewParam = firstParam(params.view);
@@ -87,6 +98,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const { initialView, initialMarketHeatMode } = await parseDashboardParams(searchParams);
   const report = (await getLatestReport()) ?? createEmptyReport();
   const valuations = createGlobalValuationSnapshot();
+  const initialToday = shanghaiDateValue();
 
   return (
     <ReportDashboard
@@ -94,6 +106,7 @@ export default async function Home({ searchParams }: HomeProps) {
       initialValuations={valuations}
       initialView={initialView}
       initialMarketHeatMode={initialMarketHeatMode}
+      initialToday={initialToday}
     />
   );
 }

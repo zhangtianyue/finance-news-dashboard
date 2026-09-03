@@ -5,10 +5,10 @@ function isAuthorized(request: NextRequest) {
   if (process.env.NODE_ENV !== "production") return true;
 
   const secret = process.env.CRON_SECRET;
-  const auth = request.headers.get("authorization");
-  if (secret) return auth === `Bearer ${secret}`;
+  if (!secret) return false;
 
-  return request.headers.get("user-agent")?.includes("vercel-cron/1.0") ?? false;
+  const auth = request.headers.get("authorization");
+  return auth === `Bearer ${secret}`;
 }
 
 export async function GET(request: NextRequest) {

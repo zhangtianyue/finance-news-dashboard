@@ -369,6 +369,13 @@ function redisConfig() {
   return url && token ? { url, token } : null;
 }
 
+function isAuthorizedShareRefresh(request: NextRequest) {
+  if (process.env.NODE_ENV !== "production") return true;
+
+  const secret = process.env.CRON_SECRET;
+  return Boolean(secret && request.headers.get("authorization") === `Bearer ${secret}`);
+}
+
 async function upstashCommand<T>(command: unknown[]) {
   const config = redisConfig();
   if (!config) return null;
@@ -923,8 +930,12 @@ export async function GET(request: NextRequest) {
   const refreshShares = request.nextUrl.searchParams.get("refreshShares") === "1";
   const live = request.nextUrl.searchParams.get("live") === "1";
   const loadSlowFallbacks = request.nextUrl.searchParams.get("details") === "1";
+  if (refreshShares && !isAuthorizedShareRefresh(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const now = Date.now();
-  if (!live && !refreshShares && qdiiQuoteCache && qdiiQuoteCache.expiresAt > now) {
+  if (!refreshShares && qdiiQuoteCache && qdiiQuoteCache.expiresAt > now) {
     return NextResponse.json(
       { ...qdiiQuoteCache.payload, cached: true },
       {

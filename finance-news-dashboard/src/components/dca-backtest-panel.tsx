@@ -83,10 +83,6 @@ const frequencyLabels: Record<DcaFrequency, string> = {
 
 const firstSelectableYear = 1970;
 
-function todayInputValue() {
-  return formatDateInput(new Date());
-}
-
 function defaultStartDate() {
   return "2015-01-01";
 }
@@ -277,7 +273,7 @@ function parseDate(value: string) {
 }
 
 function dateParts(value: string) {
-  const fallback = todayInputValue();
+  const fallback = defaultStartDate();
   const match = (value || fallback).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const source = match ? value : fallback;
   const [year, month, day] = source.split("-").map(Number);
@@ -293,8 +289,7 @@ function buildDateValue(year: number, month: number, day: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(validDay).padStart(2, "0")}`;
 }
 
-function selectableYears() {
-  const currentYear = new Date().getFullYear();
+function selectableYears(currentYear: number) {
   return Array.from(
     { length: currentYear - firstSelectableYear + 1 },
     (_, index) => currentYear - index,
@@ -556,14 +551,16 @@ function SegmentButton({
 
 function DatePartsSelect({
   value,
+  currentYear,
   onChange,
 }: {
   value: string;
+  currentYear: number;
   onChange: (value: string) => void;
 }) {
   const { year, month, day } = dateParts(value);
   const dayCount = daysInMonth(year, month);
-  const years = selectableYears();
+  const years = selectableYears(currentYear);
 
   function updateDate(next: Partial<{ year: number; month: number; day: number }>) {
     onChange(buildDateValue(next.year ?? year, next.month ?? month, next.day ?? day));
@@ -789,14 +786,20 @@ function InstrumentCombobox({
   );
 }
 
-export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
+export function DcaBacktestPanel({
+  theme,
+  initialToday,
+}: {
+  theme: DashboardTheme;
+  initialToday: string;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [ticker, setTicker] = useState("SPY");
   const [selectedInstrument, setSelectedInstrument] = useState<InstrumentOption | null>(
     popularInstruments[0],
   );
   const [startDate, setStartDate] = useState(defaultStartDate);
-  const [endDate, setEndDate] = useState(todayInputValue);
+  const [endDate, setEndDate] = useState(initialToday);
   const [frequency, setFrequency] = useState<DcaFrequency>("monthly");
   const [amount, setAmount] = useState("1000");
   const [fee, setFee] = useState("0");
@@ -983,10 +986,18 @@ export function DcaBacktestPanel({ theme }: { theme: DashboardTheme }) {
 
             <div className="grid gap-3">
               <FieldLabel label="开始日期">
-                <DatePartsSelect value={startDate} onChange={setStartDate} />
+                <DatePartsSelect
+                  value={startDate}
+                  currentYear={Number(initialToday.slice(0, 4))}
+                  onChange={setStartDate}
+                />
               </FieldLabel>
               <FieldLabel label="结束日期">
-                <DatePartsSelect value={endDate} onChange={setEndDate} />
+                <DatePartsSelect
+                  value={endDate}
+                  currentYear={Number(initialToday.slice(0, 4))}
+                  onChange={setEndDate}
+                />
               </FieldLabel>
             </div>
           </ControlSection>

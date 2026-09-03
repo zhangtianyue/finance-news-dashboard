@@ -39,6 +39,7 @@ export type MorningReport = {
   marketImpact: ReportSection;
   risks: ReportSection;
   focusTags: string[];
+  cacheState?: "fresh" | "stale";
   refreshNotice?: string;
 };
 
@@ -60,6 +61,15 @@ const fetchTimeoutMs = 5000;
 const fetchAttemptCount = 2;
 const morningReportCacheTag = "morning-report-v3";
 const morningReportRevalidateSeconds = 20 * 60;
+
+function isFreshReport(report: MorningReport) {
+  const generatedAt = Date.parse(report.generatedAt);
+  return (
+    Number.isFinite(generatedAt) &&
+    Date.now() - generatedAt >= 0 &&
+    Date.now() - generatedAt < morningReportRevalidateSeconds * 1000
+  );
+}
 
 function isVercelRuntime() {
   return process.env.VERCEL === "1";
@@ -528,7 +538,14 @@ export function createEmptyReport(): MorningReport {
 export async function getLatestReport(): Promise<MorningReport | null> {
   if (!isVercelRuntime()) {
     const localReport = await readLocalLatestReport();
-    if (localReport) return localReport;
+    if (localReport) {
+      if (isFreshReport(localReport)) return { ...localReport, cacheState: "fresh" };
+      return {
+        ...localReport,
+        cacheState: "stale",
+        refreshNotice: "当前先显示本地旧缓存，正在后台获取最新早报。",
+      };
+    }
   }
 
   try {
