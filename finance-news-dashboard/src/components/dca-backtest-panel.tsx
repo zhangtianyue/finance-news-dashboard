@@ -937,7 +937,7 @@ export function DcaBacktestPanel({
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)] 2xl:grid-cols-[440px_minmax(0,1fr)]">
+      <div className="grid gap-4 md:grid-cols-[minmax(300px,38%)_minmax(0,1fr)] xl:grid-cols-[420px_minmax(0,1fr)] xl:gap-5 2xl:grid-cols-[440px_minmax(0,1fr)]">
         <form
           onSubmit={handleRun}
           className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm"
@@ -1069,7 +1069,7 @@ export function DcaBacktestPanel({
         </form>
 
         <div className="min-w-0">
-          <div className="mb-4 grid gap-3 md:grid-cols-3 2xl:grid-cols-6">
+          <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
             <MetricCard
               label="总投入"
               value={result ? formatMoney(result.invested) : "N/A"}
