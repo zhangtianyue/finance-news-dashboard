@@ -713,7 +713,7 @@ export function LoanCalculatorPanel({ theme }: { theme: DashboardTheme }) {
         </div>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[390px_minmax(0,1fr)]">
+      <div className="grid gap-4 md:grid-cols-[minmax(280px,36%)_minmax(0,1fr)] xl:grid-cols-[390px_minmax(0,1fr)] xl:gap-5">
         <form
           onSubmit={(event) => event.preventDefault()}
           className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm"
@@ -758,7 +758,7 @@ export function LoanCalculatorPanel({ theme }: { theme: DashboardTheme }) {
           </ControlSection>
 
           <ControlSection title="贷款参数">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1 2xl:grid-cols-2">
               <FieldLabel label="贷款金额（万元）">
                 <input
                   type="number"
@@ -806,7 +806,7 @@ export function LoanCalculatorPanel({ theme }: { theme: DashboardTheme }) {
               </div>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1 2xl:grid-cols-2">
               <FieldLabel label="首次还款日期">
                 <input
                   type="date"
@@ -844,7 +844,7 @@ export function LoanCalculatorPanel({ theme }: { theme: DashboardTheme }) {
 
             {earlyRepaymentEnabled ? (
               <div className="grid gap-4 rounded-md border border-sky-200 bg-sky-50 p-3">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1 2xl:grid-cols-2">
                   <FieldLabel label="提前还款（万元）">
                     <input
                       type="number"
@@ -901,7 +901,7 @@ export function LoanCalculatorPanel({ theme }: { theme: DashboardTheme }) {
 
           {result ? (
             <>
-              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-6">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
                 <MetricCard label="首月月供" value={formatYuan(result.firstPayment)} />
                 <MetricCard
                   label="末月还款"
