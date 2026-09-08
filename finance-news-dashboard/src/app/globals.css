@@ -155,6 +155,74 @@ html[data-theme="dark"] .dashboard-shell .dca-chart-placeholder {
     linear-gradient(90deg, #293440 1px, transparent 1px);
 }
 
+.fx-converter {
+  grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr);
+}
+
+.fx-converter-wide {
+  grid-column: 1 / -1;
+}
+
+.fx-matrix-scroll {
+  max-height: 720px;
+  overscroll-behavior-x: contain;
+}
+
+.fx-matrix {
+  min-width: 700px;
+}
+
+.fx-matrix th,
+.fx-matrix td {
+  border-right: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.fx-matrix th:last-child,
+.fx-matrix td:last-child {
+  border-right: 0;
+}
+
+.fx-matrix tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.fx-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.fx-matrix th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 88px;
+}
+
+.fx-matrix thead th.fx-corner {
+  z-index: 3;
+}
+
+html[data-theme="dark"] .fx-matrix th,
+html[data-theme="dark"] .fx-matrix td {
+  border-color: #293440;
+}
+
+html[data-theme="dark"] .fx-matrix button:hover {
+  background-color: #16344a;
+}
+
+@media (min-width: 768px) {
+  .fx-converter {
+    grid-template-columns: minmax(100px, 1fr) minmax(120px, 1fr) 36px minmax(120px, 1fr) minmax(150px, 1.3fr);
+  }
+
+  .fx-converter-wide {
+    grid-column: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dashboard-shell *,
   .dashboard-shell *::before,

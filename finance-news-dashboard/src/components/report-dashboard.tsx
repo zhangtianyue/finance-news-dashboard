@@ -3,6 +3,7 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowLeftRight,
   ArrowUpRight,
   BadgePercent,
   Calculator,
@@ -37,6 +38,7 @@ import type { AshareDividendSnapshot } from "@/lib/a-share-dividends";
 import { DcaBacktestPanel } from "@/components/dca-backtest-panel";
 import { AshareDividendPanel } from "@/components/a-share-dividend-panel";
 import { LoanCalculatorPanel } from "@/components/loan-calculator-panel";
+import { FxMatrixPanel } from "@/components/fx-matrix-panel";
 import type { MorningReport, NewsItem, SourceId } from "@/lib/news-report";
 import type { MarketPulseItem, MorningCalendarItem } from "@/lib/morning-market";
 import type { PolymarketHotItem, PolymarketHotSnapshot } from "@/lib/polymarket-hot";
@@ -49,6 +51,7 @@ const sourceOrder: SourceId[] = ["cls", "wallstreetcn"];
 export type DashboardView =
   | "report"
   | "valuation"
+  | "fx"
   | "stablecoins"
   | "qdii"
   | "dividends"
@@ -73,6 +76,7 @@ type DashboardNavItem = {
 const dashboardViews = new Set<DashboardView>([
   "report",
   "valuation",
+  "fx",
   "stablecoins",
   "qdii",
   "dividends",
@@ -127,6 +131,8 @@ function dashboardDocumentTitle(view: DashboardView) {
   switch (view) {
     case "valuation":
       return "全球指数估值雷达";
+    case "fx":
+      return "汇率矩阵";
     case "stablecoins":
       return "全球稳定币规模";
     case "qdii":
@@ -2725,6 +2731,8 @@ export function ReportDashboard({
   const activeTimestamp =
     activeView === "report"
       ? report.generatedAtLabel
+      : activeView === "fx"
+        ? "每日参考汇率"
       : activeView === "stablecoins"
         ? stablecoinSnapshot?.updatedAtLabel ?? "待更新"
       : activeView === "dividends"
@@ -2767,6 +2775,12 @@ export function ReportDashboard({
       label: "估值雷达",
       icon: <TrendingUp className="size-3.5" />,
       title: "查看全球指数市盈率和估值表",
+    },
+    {
+      view: "fx",
+      label: "汇率矩阵",
+      icon: <ArrowLeftRight className="size-3.5" />,
+      title: "查看主要货币交叉汇率与金额换算",
     },
     {
       view: "stablecoins",
@@ -3309,6 +3323,8 @@ export function ReportDashboard({
               />
             )}
           </>
+        ) : activeView === "fx" ? (
+          <FxMatrixPanel />
         ) : activeView === "cross-market" ? (
           <CrossMarketPanel />
         ) : activeView === "dca" ? (
