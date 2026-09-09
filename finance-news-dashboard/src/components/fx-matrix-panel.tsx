@@ -107,65 +107,61 @@ export function FxMatrixPanel() {
 
   return (
     <section aria-label="汇率矩阵" className="min-w-0">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
           <span className="inline-flex items-center gap-1.5 font-medium text-slate-700">
             <CalendarDays className="size-4" aria-hidden="true" />
             参考日期 <time dateTime={snapshot?.rateDate}>{snapshot?.rateDate ?? "待获取"}</time>
           </span>
           {snapshot && <span>获取于 {formatFxCheckedAt(snapshot.fetchedAt)} 北京时间</span>}
+          <p role="status" className={warning || oldReference ? "text-amber-700" : "text-slate-500"}>{statusMessage}</p>
         </div>
         <button type="button" onClick={() => void refresh(true)} disabled={isLoading}
-          className="inline-flex h-8 items-center gap-1.5 rounded border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60">
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60">
           <RefreshCw className={`size-3.5 ${isLoading ? "animate-spin" : ""}`} aria-hidden="true" />
           {isLoading ? "更新中" : "更新汇率"}
         </button>
       </div>
 
-      <div className="fx-converter mb-5 grid items-end gap-3 border-y border-slate-200 py-4">
-        <label className="fx-converter-wide min-w-0 text-xs font-medium text-slate-500">
+      <div className="fx-converter mb-2 grid items-center gap-3 border-t border-slate-200 py-2">
+        <label className="fx-control fx-converter-wide min-w-0 text-xs font-medium text-slate-500">
           金额
           <input aria-label="换算金额" type="number" inputMode="decimal" min="0" max="1000000000000" step="any"
             value={amount} onChange={(event) => setAmount(event.target.value)} aria-invalid={amountInvalid}
-            className="mt-2 h-10 w-full min-w-0 rounded border border-slate-300 bg-white px-3 font-mono text-sm text-slate-950" />
+            className="mt-1 h-9 w-full min-w-0 rounded border border-slate-300 bg-white px-3 font-mono text-sm text-slate-950" />
         </label>
-        <label className="min-w-0 text-xs font-medium text-slate-500">
+        <label className="fx-control min-w-0 text-xs font-medium text-slate-500">
           原币种
           <select aria-label="原币种" value={pair.from} onChange={(event) => setPair({ ...pair, from: event.target.value as FxCurrency })}
-            className="mt-2 h-10 w-full min-w-0 rounded border border-slate-300 bg-white px-2 text-xs text-slate-950">
+            className="mt-1 h-9 w-full min-w-0 rounded border border-slate-300 bg-white px-2 text-xs text-slate-950">
             {fxCurrencies.map((currency) => <option key={currency.code} value={currency.code}>{currency.code} {currency.name}</option>)}
           </select>
         </label>
         <button type="button" onClick={() => setPair({ from: pair.to, to: pair.from })}
           aria-label="交换币种" title="交换币种"
-          className="mb-0.5 flex size-9 shrink-0 items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
+          className="fx-swap flex size-9 shrink-0 self-end items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
           <ArrowLeftRight className="size-4" aria-hidden="true" />
         </button>
-        <label className="min-w-0 text-xs font-medium text-slate-500">
+        <label className="fx-control min-w-0 text-xs font-medium text-slate-500">
           目标币种
           <select aria-label="目标币种" value={pair.to} onChange={(event) => setPair({ ...pair, to: event.target.value as FxCurrency })}
-            className="mt-2 h-10 w-full min-w-0 rounded border border-slate-300 bg-white px-2 text-xs text-slate-950">
+            className="mt-1 h-9 w-full min-w-0 rounded border border-slate-300 bg-white px-2 text-xs text-slate-950">
             {fxCurrencies.map((currency) => <option key={currency.code} value={currency.code}>{currency.code} {currency.name}</option>)}
           </select>
         </label>
         <div className="fx-converter-wide min-w-0">
-          <div className="text-xs font-medium text-slate-500">参考兑换金额</div>
-          <output aria-label="参考兑换金额" aria-live="polite" className="mt-2 flex min-h-10 flex-wrap items-center gap-x-2 break-all font-mono text-lg font-semibold text-slate-950">
+          <output aria-label="参考兑换金额" aria-live="polite" className="flex min-h-6 flex-wrap items-center gap-x-2 break-all font-mono text-base font-semibold text-slate-950">
             {converted == null ? "—" : converted.toLocaleString("en-US", {
               minimumFractionDigits: pair.to === "JPY" ? 0 : 2, maximumFractionDigits: pair.to === "JPY" ? 0 : 2,
             })}
             <span className="text-xs font-medium text-slate-500">{pair.to}</span>
           </output>
+          <p className="mt-0.5 break-words font-mono text-[11px] leading-4 text-slate-500" aria-live="polite">
+            1 {pair.from} = {formatFxRate(rate)} {pair.to}
+          </p>
         </div>
       </div>
       {amountInvalid && <p role="alert" className="mb-3 text-xs text-red-600">金额须在 0 至 1 万亿之间。</p>}
-
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs">
-        <p className="font-mono text-sm font-semibold text-slate-800" aria-live="polite">
-          1 {pair.from} = {formatFxRate(rate)} {pair.to}
-        </p>
-        <p role="status" className={warning || oldReference ? "text-amber-700" : "text-slate-500"}>{statusMessage}</p>
-      </div>
 
       <div className="fx-matrix-scroll overflow-auto rounded-md border border-slate-200 bg-white"
         tabIndex={0} role="region" aria-label="九币种交叉汇率表" aria-busy={isLoading}>

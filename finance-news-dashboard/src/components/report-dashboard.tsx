@@ -3103,7 +3103,7 @@ export function ReportDashboard({
             </div>
           </div>
 
-          <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6 lg:px-8 lg:py-6">
+          <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 ${activeView === "fx" ? "py-2" : "py-5 lg:py-6"}`}>
             {activeView === "report" && error ? (
               <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}

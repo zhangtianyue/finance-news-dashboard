@@ -223,6 +223,24 @@ html[data-theme="dark"] .fx-matrix button:hover {
   }
 }
 
+@media (min-width: 1280px) {
+  .fx-control {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .fx-control input,
+  .fx-control select {
+    margin-top: 0;
+  }
+
+  .fx-swap {
+    align-self: center;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dashboard-shell *,
   .dashboard-shell *::before,
