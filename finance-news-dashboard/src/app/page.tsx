@@ -22,6 +22,7 @@ const dashboardViews = new Set<DashboardView>([
   "qdii",
   "dividends",
   "polymarket",
+  "predictions",
   "cross-market",
   "dca",
   "loan",
@@ -31,7 +32,6 @@ const marketHeatModes = new Set<MarketHeatMode>([
   "sectors",
   "stock-panorama",
   "sector-panorama",
-  "events",
 ]);
 
 function firstParam(value: string | string[] | undefined) {
@@ -54,9 +54,11 @@ async function parseDashboardParams(searchParams: HomeProps["searchParams"]) {
   const viewParam = firstParam(params.view);
   const heatParam = firstParam(params.heat);
   const initialView =
-    viewParam && dashboardViews.has(viewParam as DashboardView)
-      ? (viewParam as DashboardView)
-      : "report";
+    viewParam === "polymarket" && heatParam === "events"
+      ? "predictions"
+      : viewParam && dashboardViews.has(viewParam as DashboardView)
+        ? (viewParam as DashboardView)
+        : "report";
   const initialMarketHeatMode =
     heatParam === "panorama"
       ? "stock-panorama"
@@ -81,6 +83,8 @@ function dashboardPageTitle(view: DashboardView) {
       return `A 股股息率 > ${ashareDividendMinimumYield}%`;
     case "polymarket":
       return "市场热度";
+    case "predictions":
+      return "预测市场";
     case "cross-market":
       return "中美板块映射";
     case "dca":

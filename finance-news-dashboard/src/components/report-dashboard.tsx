@@ -56,6 +56,7 @@ export type DashboardView =
   | "qdii"
   | "dividends"
   | "polymarket"
+  | "predictions"
   | "cross-market"
   | "dca"
   | "loan";
@@ -63,8 +64,7 @@ export type MarketHeatMode =
   | "stocks"
   | "sectors"
   | "stock-panorama"
-  | "sector-panorama"
-  | "events";
+  | "sector-panorama";
 type DashboardTheme = "light" | "dark";
 type DashboardNavItem = {
   view: DashboardView;
@@ -81,6 +81,7 @@ const dashboardViews = new Set<DashboardView>([
   "qdii",
   "dividends",
   "polymarket",
+  "predictions",
   "cross-market",
   "dca",
   "loan",
@@ -90,7 +91,6 @@ const marketHeatModes = new Set<MarketHeatMode>([
   "sectors",
   "stock-panorama",
   "sector-panorama",
-  "events",
 ]);
 const dashboardThemeStorageKey = "finance-dashboard-theme";
 const dashboardSidebarStorageKey = "finance-dashboard-sidebar-collapsed";
@@ -103,7 +103,9 @@ function isDashboardView(value: string | null): value is DashboardView {
 function readDashboardViewFromLocation() {
   if (typeof window === "undefined") return "report";
 
-  const view = new URLSearchParams(window.location.search).get("view");
+  const params = new URLSearchParams(window.location.search);
+  const view = params.get("view");
+  if (view === "polymarket" && params.get("heat") === "events") return "predictions";
   return isDashboardView(view) ? view : "report";
 }
 
@@ -141,6 +143,8 @@ function dashboardDocumentTitle(view: DashboardView) {
       return `A 股股息率 > ${ashareDividendMinimumYield}%`;
     case "polymarket":
       return "市场热度";
+    case "predictions":
+      return "预测市场";
     case "cross-market":
       return "中美板块映射";
     case "dca":
@@ -1545,15 +1549,21 @@ function PolymarketHotCard({ item, rank }: { item: PolymarketHotItem; rank: numb
               截止 {item.endDateLabel}
             </span>
           </div>
-          <h3 className="text-sm font-semibold leading-6 text-slate-950">{item.title}</h3>
+          <h3 lang="en" className="break-words text-sm font-semibold leading-6 text-slate-950">{item.title}</h3>
+          <p lang="zh-CN" className="mt-1 break-words text-sm leading-6 text-slate-600">
+            {item.titleZh ?? "中文翻译暂不可用"}
+          </p>
         </div>
         <ArrowUpRight className="mt-1 size-4 shrink-0 text-slate-400 transition-colors group-hover:text-slate-900" />
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-4">
-        <div>
-          <div className="text-xs text-slate-500">当前概率</div>
-          <div className="mt-1 text-sm font-semibold text-slate-950">{item.probabilityLabel}</div>
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="min-w-0">
+          <div className="text-xs text-slate-500">市场隐含概率</div>
+          <div className="mt-1 break-words text-sm font-semibold text-slate-950">{item.probabilityLabel}</div>
+          {item.probabilityLabelZh ? (
+            <div lang="zh-CN" className="mt-1 break-words text-xs leading-5 text-slate-600">{item.probabilityLabelZh}</div>
+          ) : null}
         </div>
         <div>
           <div className="text-xs text-slate-500">24h变化</div>
@@ -1576,7 +1586,11 @@ function PolymarketHotCard({ item, rank }: { item: PolymarketHotItem; rank: numb
       </div>
 
       <div className="mt-4 grid gap-3 border-t border-slate-100 pt-3 md:grid-cols-[1.1fr_0.9fr]">
-        <div className="text-sm leading-6 text-slate-700">{item.summary}</div>
+        <div className="text-sm leading-6 text-slate-700">
+          {item.probabilityLabelZh
+            ? `当前核心定价是 ${item.probabilityLabelZh}；24h 成交约 ${formatUsdAmount(item.volume24h)}。`
+            : item.summary}
+        </div>
         <div className="space-y-2 text-xs text-slate-600">
           <div className="flex flex-wrap gap-1.5">
             {item.marketImpact.map((impact) => (
@@ -1616,7 +1630,13 @@ function PolymarketCompactList({
               className="grid grid-cols-[1fr_auto] gap-3 py-3 text-sm hover:bg-slate-50"
             >
               <div className="min-w-0">
-                <div className="line-clamp-2 font-medium leading-5 text-slate-950">{item.title}</div>
+                <div lang="en" className="break-words font-medium leading-5 text-slate-950">{item.title}</div>
+                <div lang="zh-CN" className="mt-1 break-words text-xs leading-5 text-slate-600">
+                  {item.titleZh ?? "中文翻译暂不可用"}
+                </div>
+                <div className="mt-1 break-words text-xs leading-5 text-slate-500">
+                  对应选项：{item.selectedOutcomeLabelZh ?? item.selectedOutcomeLabel ?? "待更新"}
+                </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                   <span>{item.category}</span>
                   <span>{formatUsdAmount(item.volume24h)}</span>
@@ -1667,7 +1687,7 @@ function PolymarketHotPanel({
           </div>
           <h2 className="text-xl font-semibold text-slate-950">全球预测市场热度</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            按成交额、流动性、赔率变化和财经相关性筛选，优先标出可能影响利率、科技股、港股、A股、黄金、原油和加密资产的事件。
+            概率为市场交易隐含概率，不代表事件必然发生。中文仅供阅读参考，具体结算条件以原文规则为准。
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
@@ -1700,7 +1720,7 @@ function PolymarketHotPanel({
         </div>
       ) : null}
 
-      <div className="mb-4 grid gap-3 md:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
           <div className="text-xs font-medium text-slate-500">热点事件</div>
           <div className="mt-2 font-mono text-3xl font-semibold text-slate-950">
@@ -2697,7 +2717,6 @@ export function ReportDashboard({
   useEffect(() => {
     if (
       activeView !== "polymarket" ||
-      marketHeatMode === "events" ||
       stockHeatSnapshot ||
       isStockHeatLoading
     ) {
@@ -2713,8 +2732,7 @@ export function ReportDashboard({
 
   useEffect(() => {
     if (
-      activeView !== "polymarket" ||
-      marketHeatMode !== "events" ||
+      activeView !== "predictions" ||
       polymarketSnapshot ||
       isPolymarketLoading
     ) {
@@ -2726,7 +2744,7 @@ export function ReportDashboard({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [activeView, marketHeatMode, polymarketSnapshot, isPolymarketLoading]);
+  }, [activeView, polymarketSnapshot, isPolymarketLoading]);
 
   const activeTimestamp =
     activeView === "report"
@@ -2738,9 +2756,9 @@ export function ReportDashboard({
       : activeView === "dividends"
         ? dividendSnapshot?.updatedAtLabel ?? "待更新"
         : activeView === "polymarket"
-          ? marketHeatMode !== "events"
-            ? stockHeatSnapshot?.updatedAtLabel ?? "待更新"
-            : polymarketSnapshot?.updatedAtLabel ?? "待更新"
+          ? stockHeatSnapshot?.updatedAtLabel ?? "待更新"
+          : activeView === "predictions"
+            ? polymarketSnapshot?.updatedAtLabel ?? "待更新"
           : activeView === "dca"
             ? "按需运行"
             : activeView === "loan"
@@ -2762,7 +2780,13 @@ export function ReportDashboard({
       view: "polymarket",
       label: "市场热度",
       icon: <Activity className="size-3.5" />,
-      title: "查看 A 股、美股和预测市场热点",
+      title: "查看 A 股和美股的股票、板块热度",
+    },
+    {
+      view: "predictions",
+      label: "预测市场",
+      icon: <Gauge className="size-3.5" />,
+      title: "查看全球事件的市场隐含概率与中英文对照",
     },
     {
       view: "cross-market",
@@ -3056,27 +3080,27 @@ export function ReportDashboard({
                   <RefreshCw className={`size-4 ${isDividendLoading ? "animate-spin" : ""}`} />
                   {isDividendLoading ? "更新中" : "刷新股息"}
                 </button>
-              ) : activeView === "polymarket" ? (
+              ) : activeView === "polymarket" || activeView === "predictions" ? (
                 <button
                   type="button"
                   onClick={() =>
-                    marketHeatMode !== "events"
+                    activeView === "polymarket"
                       ? refreshStockHeat(true)
                       : refreshPolymarketHotspots()
                   }
                   disabled={
-                    marketHeatMode !== "events" ? isStockHeatLoading : isPolymarketLoading
+                    activeView === "polymarket" ? isStockHeatLoading : isPolymarketLoading
                   }
                   className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-sky-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:bg-slate-400"
                   title={
-                    marketHeatMode !== "events"
+                    activeView === "polymarket"
                       ? "重新拉取 A 股和美股市场热度"
                       : "重新拉取 Polymarket 热点预测市场"
                   }
                 >
                   <RefreshCw
                     className={`size-4 ${
-                      marketHeatMode !== "events"
+                      activeView === "polymarket"
                         ? isStockHeatLoading
                           ? "animate-spin"
                           : ""
@@ -3085,7 +3109,7 @@ export function ReportDashboard({
                           : ""
                     }`}
                   />
-                  {marketHeatMode !== "events"
+                  {activeView === "polymarket"
                     ? isStockHeatLoading
                       ? "更新中"
                       : marketHeatMode === "stocks"
@@ -3097,7 +3121,7 @@ export function ReportDashboard({
                             : "刷新板块全景"
                     : isPolymarketLoading
                       ? "更新中"
-                      : "刷新事件"}
+                      : "刷新预测"}
                 </button>
               ) : null}
             </div>
@@ -3273,20 +3297,6 @@ export function ReportDashboard({
                 <Globe2 className="size-4" />
                 板块全景
               </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={marketHeatMode === "events"}
-                onClick={() => switchMarketHeatMode("events")}
-                className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded px-2 text-xs font-semibold transition-colors sm:flex-none sm:gap-2 sm:px-4 sm:text-sm ${
-                  marketHeatMode === "events"
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
-                }`}
-              >
-                <Activity className="size-4" />
-                事件预测
-              </button>
             </div>
 
             {marketHeatMode === "stocks" ? (
@@ -3308,21 +3318,21 @@ export function ReportDashboard({
                 message={stockHeatMessage}
                 variant="stocks"
               />
-            ) : marketHeatMode === "sector-panorama" ? (
+            ) : (
               <PanoramaHeatPanel
                 snapshot={stockHeatSnapshot}
                 isLoading={isStockHeatLoading}
                 message={stockHeatMessage}
                 variant="sectors"
               />
-            ) : (
-              <PolymarketHotPanel
-                snapshot={polymarketSnapshot}
-                isLoading={isPolymarketLoading}
-                message={polymarketMessage}
-              />
             )}
           </>
+        ) : activeView === "predictions" ? (
+          <PolymarketHotPanel
+            snapshot={polymarketSnapshot}
+            isLoading={isPolymarketLoading}
+            message={polymarketMessage}
+          />
         ) : activeView === "fx" ? (
           <FxMatrixPanel />
         ) : activeView === "cross-market" ? (

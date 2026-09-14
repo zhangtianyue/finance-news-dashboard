@@ -12,11 +12,16 @@ export type PolymarketHotItem = {
   id: string;
   slug: string;
   title: string;
+  titleZh: string | null;
   url: string;
   category: PolymarketHotCategory;
   tags: string[];
   probability: number | null;
   probabilityLabel: string;
+  probabilityLabelZh: string | null;
+  selectedOutcomeId: string | null;
+  selectedOutcomeLabel: string | null;
+  selectedOutcomeLabelZh: string | null;
   change24h: number | null;
   volume24h: number | null;
   volumeTotal: number | null;
@@ -30,7 +35,9 @@ export type PolymarketHotItem = {
   riskFocus: string;
   isMarketRelevant: boolean;
   topOutcomes: {
+    id: string | null;
     label: string;
+    labelZh: string | null;
     probability: number | null;
     change24h: number | null;
   }[];
@@ -357,13 +364,14 @@ function eventTags(event: RawRecord) {
 function marketOutcome(market: RawRecord) {
   const outcomes = parseStringArray(market.outcomes);
   const prices = parseNumberArray(market.outcomePrices);
-  const groupTitle = readString(market, "groupItemTitle");
+  const groupTitle = readString(market, "groupItemTitle")?.trim() || null;
   const question = readString(market, "question") ?? "Outcome";
   const yesIndex = outcomes.findIndex((outcome) => outcome.toLowerCase() === "yes");
   const probability = prices[yesIndex >= 0 ? yesIndex : 0] ?? readNumber(market, "lastTradePrice");
   const label = groupTitle ?? (yesIndex >= 0 ? question.replace(/\?$/, "") : outcomes[0] ?? question);
 
   return {
+    id: readString(market, "id"),
     label,
     probability: probability != null ? Math.max(0, Math.min(1, probability)) : null,
     change24h: readNumber(market, "oneDayPriceChange"),
@@ -385,7 +393,7 @@ function toHotItem(event: RawRecord): PolymarketHotItem | null {
     .map(marketOutcome)
     .sort((a, b) => (b.probability ?? -1) - (a.probability ?? -1))
     .slice(0, 3)
-    .map(({ label, probability, change24h }) => ({ label, probability, change24h }));
+    .map(({ id, label, probability, change24h }) => ({ id, label, labelZh: null, probability, change24h }));
   const selectedOutcome =
     markets
       .map(marketOutcome)
@@ -424,11 +432,16 @@ function toHotItem(event: RawRecord): PolymarketHotItem | null {
     id,
     slug,
     title,
+    titleZh: null,
     url: `${polymarketHomeUrl}/event/${slug}`,
     category,
     tags: tags.slice(0, 4),
     probability: selectedOutcome?.probability ?? null,
     probabilityLabel,
+    probabilityLabelZh: null,
+    selectedOutcomeId: selectedOutcome?.id ?? null,
+    selectedOutcomeLabel: selectedOutcome?.label ?? null,
+    selectedOutcomeLabelZh: null,
     change24h: selectedOutcome?.change24h ?? null,
     volume24h,
     volumeTotal,
@@ -443,6 +456,105 @@ function toHotItem(event: RawRecord): PolymarketHotItem | null {
     isMarketRelevant,
     topOutcomes,
   };
+}
+
+function chineseText(value: string | null) {
+  const text = value?.trim();
+  return text && /[\u3400-\u9fff]/u.test(text) ? text : null;
+}
+
+function chineseDate(text: string) {
+  const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const match = text.match(/^([A-Za-z]+)(?: (\d{1,2}))?(?:,? (\d{4}))?$/);
+  if (!match) return null;
+  const month = months.indexOf(match[1]) + 1;
+  if (!month) return null;
+  return `${match[3] ? `${match[3]}年` : ""}${month}月${match[2] ? `${match[2]}日` : ""}`;
+}
+
+// Exact recurring templates avoid vague machine translations of financial terms like "hit".
+export function translatePredictionTitle(title: string): string | null {
+  let match = title.match(/^Sweden Parliamentary Election: (\d+)(?:st|nd|rd|th) Place$/);
+  if (match) return `瑞典议会选举：哪个政党将排名第${match[1]}？`;
+  match = title.match(/^What (?:price will (Bitcoin|Ethereum)|will (WTI Crude Oil \(WTI\))) hit in (.+)\?$/);
+  if (match) {
+    const date = chineseDate(match[3]);
+    const asset = match[1] === "Bitcoin" ? "比特币" : match[1] === "Ethereum" ? "以太坊" : "WTI原油";
+    if (date) return `${asset}在${date}会触及什么价格？`;
+  }
+  match = title.match(/^Elon Musk # tweets (.+) - (.+)\?$/);
+  if (match) {
+    const start = chineseDate(match[1]);
+    const end = chineseDate(match[2]);
+    if (start && end) return `埃隆·马斯克在${start}至${end}期间会发布多少条推文？`;
+  }
+  match = title.match(/^Iran-Oman Hormuz Management Agreement by\.\.\.\?$/);
+  if (match) return "伊朗与阿曼会在何时之前达成霍尔木兹海峡管理协议？";
+  return null;
+}
+
+function translateOutcomeLabel(label: string) {
+  if (/^no change$/i.test(label)) return "维持不变";
+  const rate = label.match(/^(\d+)\s*bps?\s+(decrease|increase)$/i);
+  if (rate) return `${rate[2].toLowerCase() === "decrease" ? "降息" : "加息"}${rate[1]}个基点`;
+  const game = label.match(/^Game (\d+) Winner$/);
+  if (game) return `第${game[1]}局胜者`;
+  return chineseDate(label);
+}
+
+// Join only text by stable IDs; localized prices must never replace the quote snapshot.
+export function translatePolymarketItems(
+  items: PolymarketHotItem[],
+  localizedEvents: unknown[],
+  previousItems: PolymarketHotItem[] = [],
+) {
+  const events = new Map(
+    localizedEvents.map(asRecord).filter((event): event is RawRecord => event != null)
+      .map((event) => [readString(event, "id"), event]),
+  );
+  const previous = new Map(previousItems.map((item) => [item.id, item]));
+  return items.map((item) => {
+    const candidate = events.get(item.id);
+    const event = candidate && readString(candidate, "slug") === item.slug ? candidate : null;
+    const oldItem = previous.get(item.id);
+    const old = oldItem?.title === item.title ? oldItem : null;
+    const markets = new Map(
+      parseJsonArray(event?.markets).map(asRecord)
+        .filter((market): market is RawRecord => market != null)
+        .map((market) => [readString(market, "id"), market]),
+    );
+    const outcomeText = (id: string | null) => {
+      if (!id) return null;
+      const market = markets.get(id);
+      if (!market) return null;
+      // Keep the same label convention as marketOutcome, including non-binary markets.
+      const group = readString(market, "groupItemTitle")?.trim();
+      if (group) return chineseText(group);
+      const outcomes = parseStringArray(market.outcomes);
+      const isBinary = outcomes.some((label) => /^(yes|是)$/i.test(label));
+      return chineseText(isBinary
+        ? readString(market, "question")?.replace(/[?？]$/, "") ?? null
+        : outcomes[0] ?? readString(market, "question"));
+    };
+    const selectedLabelZh = outcomeText(item.selectedOutcomeId);
+    const previousLabelZh = old?.selectedOutcomeId === item.selectedOutcomeId &&
+      old?.selectedOutcomeLabel === item.selectedOutcomeLabel
+      ? old.selectedOutcomeLabelZh ?? null : null;
+    const labelZh = selectedLabelZh ?? translateOutcomeLabel(item.selectedOutcomeLabel ?? "") ?? previousLabelZh;
+    return {
+      ...item,
+      titleZh: translatePredictionTitle(item.title) ?? chineseText(event ? readString(event, "title") : null) ?? old?.titleZh ?? null,
+      selectedOutcomeLabelZh: labelZh,
+      probabilityLabelZh: labelZh && item.probability != null
+        ? `${labelZh} ${formatProbability(item.probability)}` : null,
+      topOutcomes: item.topOutcomes.map((outcome) => ({
+        ...outcome,
+        labelZh: outcomeText(outcome.id) ?? translateOutcomeLabel(outcome.label) ?? old?.topOutcomes.find(
+          (previous) => previous.id === outcome.id && previous.label === outcome.label,
+        )?.labelZh ?? null,
+      })),
+    };
+  });
 }
 
 export function createEmptyPolymarketHotSnapshot(message = "Polymarket 热点暂时不可用。") {
@@ -477,28 +589,32 @@ async function refreshPolymarketHotSnapshot(): Promise<PolymarketHotSnapshot> {
   const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
 
   try {
-    const response = await fetch(`${polymarketEventsUrl}?${params.toString()}`, {
-      signal: controller.signal,
-      headers: {
-        accept: "application/json",
-        "user-agent": "finance-news-dashboard/1.0",
-      },
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      throw new Error(`Polymarket API ${response.status}`);
-    }
-
-    const parsed = (await response.json()) as unknown;
+    const fetchEvents = async (locale?: string): Promise<unknown[]> => {
+      const query = new URLSearchParams(params);
+      if (locale) query.set("locale", locale);
+      const response = await fetch(`${polymarketEventsUrl}?${query}`, {
+        signal: controller.signal,
+        headers: { accept: "application/json", "user-agent": "finance-news-dashboard/1.0" },
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(`Polymarket API ${response.status}`);
+      const parsed: unknown = await response.json();
+      if (!Array.isArray(parsed)) throw new Error("Polymarket 返回格式异常");
+      return parsed;
+    };
+    const [parsed, localized] = await Promise.all([
+      fetchEvents(),
+      fetchEvents("zh").catch(() => []),
+    ]);
     const events = Array.isArray(parsed) ? parsed : [];
-    const items = events
+    const rawItems = events
       .map(asRecord)
       .filter((event): event is RawRecord => event != null)
       .map(toHotItem)
       .filter((item): item is PolymarketHotItem => item != null)
       .sort((a, b) => b.heatScore - a.heatScore)
       .slice(0, 30);
+    const items = translatePolymarketItems(rawItems, localized, hotSnapshotCache?.snapshot.items);
     const updatedAt = new Date().toISOString();
     const categoryCounts = Object.fromEntries(
       categories.map((category) => [
