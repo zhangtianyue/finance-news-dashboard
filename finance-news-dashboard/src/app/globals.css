@@ -1,12 +1,12 @@
 @import "tailwindcss";
 
 :root {
-  --background: #eef2f5;
+  --background: #f4f6f7;
   --foreground: #0f172a;
 }
 
 html[data-theme="dark"] {
-  --background: #0a0e13;
+  --background: #121416;
   --foreground: #e7edf5;
   color-scheme: dark;
 }
@@ -15,7 +15,7 @@ html[data-theme="dark"] {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -23,7 +23,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 button,
@@ -35,13 +35,22 @@ a {
   color-scheme: light;
 }
 
+.dashboard-shell :is(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid #0891a1;
+  outline-offset: 3px;
+}
+
+.dashboard-shell button:not(:disabled) {
+  cursor: pointer;
+}
+
 .dashboard-shell .finance-panel,
 .dashboard-shell .shadow-sm {
-  box-shadow: 0 1px 2px rgb(15 23 42 / 0.05), 0 8px 24px rgb(15 23 42 / 0.025);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.035);
 }
 
 html[data-theme="dark"] .dashboard-shell {
-  background: #0a0e13 !important;
+  background: #121416 !important;
   color: #e7edf5;
   color-scheme: dark;
 }
@@ -49,15 +58,15 @@ html[data-theme="dark"] .dashboard-shell {
 html[data-theme="dark"] .dashboard-shell .workspace-header,
 html[data-theme="dark"] .dashboard-shell .bg-white,
 html[data-theme="dark"] .dashboard-shell .bg-white\/70 {
-  background-color: #111820 !important;
+  background-color: #191c20 !important;
 }
 
 html[data-theme="dark"] .dashboard-shell .bg-slate-50 {
-  background-color: #151d26 !important;
+  background-color: #202429 !important;
 }
 
 html[data-theme="dark"] .dashboard-shell .bg-slate-100 {
-  background-color: #1b2530 !important;
+  background-color: #292e34 !important;
 }
 
 html[data-theme="dark"] .dashboard-shell .text-slate-950,
@@ -125,7 +134,7 @@ html[data-theme="dark"] .dashboard-shell .hover\:bg-white:hover {
 
 html[data-theme="dark"] .dashboard-shell .finance-panel,
 html[data-theme="dark"] .dashboard-shell .shadow-sm {
-  box-shadow: 0 1px 0 rgb(255 255 255 / 0.03), 0 12px 28px rgb(0 0 0 / 0.18);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.025);
 }
 
 html[data-theme="dark"] .dashboard-shell .text-red-600,

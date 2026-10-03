@@ -8,6 +8,7 @@ import {
   BadgePercent,
   Calculator,
   CircleDollarSign,
+  ChevronDown,
   Clock3,
   FileText,
   Flame,
@@ -46,6 +47,7 @@ import type { StockHeatItem, StockHeatSector, StockHeatSnapshot } from "@/lib/st
 import type { StablecoinSnapshot } from "@/lib/stablecoins";
 import { StablecoinPanel } from "@/components/stablecoin-panel";
 import crossMarketSnapshot from "@/generated/cross-market-snapshot.json";
+import styles from "./dashboard-design.module.css";
 
 const sourceOrder: SourceId[] = ["cls", "wallstreetcn"];
 export type DashboardView =
@@ -265,9 +267,9 @@ function Section({
   bullets: string[];
 }) {
   return (
-    <section className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+    <section className={styles.briefSection}>
       <div className="mb-4 flex items-center gap-2">
-        <span className="flex size-8 items-center justify-center rounded bg-slate-900 text-white">
+        <span className="text-sky-600">
           {icon}
         </span>
         <h2 className="text-base font-semibold text-slate-950">{title}</h2>
@@ -297,7 +299,7 @@ function MarketPulseGrid({ items }: { items: MarketPulseItem[] }) {
       </div>
 
       {items.length ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <div className={styles.marketStrip}>
           {items.map((item) => {
             const changeClass =
               item.tone === "up"
@@ -308,15 +310,15 @@ function MarketPulseGrid({ items }: { items: MarketPulseItem[] }) {
             return (
               <article
                 key={item.id}
-                className="min-w-0 rounded-md border border-slate-200 bg-white px-3 py-3 shadow-sm"
+                className={styles.marketCell}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs font-medium text-slate-500">
                     {item.label}
                   </span>
-                  <span className="shrink-0 text-[10px] text-slate-400">{item.group}</span>
+                  <span className={`${styles.marketGroup} shrink-0 text-[10px] text-slate-400`}>{item.group}</span>
                 </div>
-                <div className="mt-2 flex min-w-0 items-baseline justify-between gap-1">
+                <div className={styles.marketValue}>
                   <span className="whitespace-nowrap font-mono text-base font-semibold text-slate-950 sm:text-lg">
                     {item.displayValue}
                   </span>
@@ -357,8 +359,8 @@ function CalendarPanel({
     : date;
 
   return (
-    <section className="rounded-md border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-200 px-4 py-3">
+    <section className={styles.calendarPanel}>
+      <div className={styles.calendarHeader}>
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <div className="flex items-center gap-2">
             <Clock3 className="size-4 text-sky-600" />
@@ -386,22 +388,22 @@ function CalendarPanel({
                 href={item.url}
                 target="_blank"
                 rel="noreferrer"
-                className="group grid grid-cols-[4.5rem_1fr_auto] items-start gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
+                className={`group ${styles.calendarRow}`}
               >
                 <div className="font-mono text-xs font-semibold text-slate-600">
                   {item.timeLabel}
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className={`size-1.5 shrink-0 rounded-full ${importanceClass}`} />
                     <span className="font-mono text-[10px] font-semibold text-sky-700">
                       {item.category}
                     </span>
-                    <span className="truncate text-sm font-semibold text-slate-900">
+                    <span className="min-w-0 break-words text-sm font-semibold text-slate-900">
                       {item.title}
                     </span>
                   </div>
-                  <div className="mt-1 truncate text-xs text-slate-500">{item.detail}</div>
+                  <div className="mt-1 break-words text-xs leading-5 text-slate-500">{item.detail}</div>
                 </div>
                 <ArrowUpRight className="mt-0.5 size-4 text-slate-400 transition-colors group-hover:text-slate-900" />
               </a>
@@ -2313,6 +2315,8 @@ export function ReportDashboard({
   const [activeView, setActiveView] = useState<DashboardView>(initialView);
   const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("light");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const mobileNavButton = useRef<HTMLButtonElement>(null);
   const [hasRefreshedValuations, setHasRefreshedValuations] = useState(false);
   const [hasRefreshedQdii, setHasRefreshedQdii] = useState(false);
   const [isValuationLoading, setIsValuationLoading] = useState(false);
@@ -2344,6 +2348,7 @@ export function ReportDashboard({
 
   const switchView = useCallback((view: DashboardView) => {
     setActiveView(view);
+    setIsMobileNavOpen(false);
 
     if (typeof window === "undefined") return;
     document.title = `${dashboardDocumentTitle(view)} | MARKET DESK`;
@@ -2370,6 +2375,7 @@ export function ReportDashboard({
 
   const handleViewLinkClick = useCallback(
     (view: DashboardView) => (event: MouseEvent<HTMLAnchorElement>) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.preventDefault();
       switchView(view);
     },
@@ -2839,10 +2845,11 @@ export function ReportDashboard({
   ];
 
   return (
-    <main className="dashboard-shell min-h-screen bg-[#eef2f5] text-slate-950">
+    <main className={`dashboard-shell ${styles.shell} min-h-screen text-slate-950`}>
+      <a href="#workspace-content" className={styles.skipLink}>跳至内容</a>
       <div className="min-h-screen lg:flex">
         <aside
-          className={`relative hidden h-screen shrink-0 flex-col border-r border-white/10 bg-[#0b1118] text-white transition-[width] duration-200 lg:sticky lg:top-0 lg:flex ${
+          className={`${styles.sidebar} relative hidden shrink-0 flex-col transition-[width] duration-200 lg:sticky lg:top-0 lg:flex ${
             isSidebarCollapsed ? "w-[72px]" : "w-52"
           }`}
           data-sidebar-collapsed={isSidebarCollapsed ? "true" : "false"}
@@ -2850,7 +2857,7 @@ export function ReportDashboard({
           <button
             type="button"
             onClick={toggleSidebar}
-            className="absolute -right-3 top-7 z-20 flex size-6 items-center justify-center rounded-full border border-slate-600 bg-[#111a24] text-slate-300 shadow-md transition-colors hover:border-sky-400 hover:text-sky-300"
+            className={`${styles.sidebarToggle} absolute -right-3 top-7 z-20 flex size-6 items-center justify-center rounded-full transition-colors`}
             aria-label={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
             title={isSidebarCollapsed ? "展开侧栏" : "收起侧栏"}
           >
@@ -2862,64 +2869,57 @@ export function ReportDashboard({
           </button>
 
           <div
-            className={`flex h-20 items-center border-b border-white/10 ${
+            className={`${styles.brand} flex h-20 shrink-0 items-center ${
               isSidebarCollapsed ? "justify-center px-2" : "gap-3 px-4"
             }`}
           >
-            <span className="flex size-9 items-center justify-center rounded-md border border-sky-400/30 bg-sky-400/10 text-sky-300">
+            <span className={styles.brandIcon}>
               <Gauge className="size-5" />
             </span>
             {!isSidebarCollapsed ? (
               <div>
-                <div className="font-mono text-xs font-semibold text-sky-300">MARKET DESK</div>
+                <div className="font-mono text-xs font-semibold">MARKET DESK</div>
                 <div className="mt-0.5 text-xs text-slate-400">个人市场终端</div>
               </div>
             ) : null}
           </div>
 
           <nav
-            className={`flex-1 space-y-1 py-5 ${isSidebarCollapsed ? "px-2" : "px-2.5"}`}
+            className={`min-h-0 flex-1 overflow-y-auto py-3 ${isSidebarCollapsed ? "px-2" : "px-2.5"}`}
             aria-label="主导航"
           >
             {navItems.map((item) => (
+              <div key={item.view}>
+                {!isSidebarCollapsed && ["report", "valuation", "dca"].includes(item.view) ? (
+                  <div className={styles.navGroup}>
+                    {item.view === "report" ? "市场观察" : item.view === "valuation" ? "资产数据" : "测算工具"}
+                  </div>
+                ) : null}
               <a
-                key={item.view}
                 href={dashboardViewHref(item.view)}
                 onClick={handleViewLinkClick(item.view)}
-                className={`relative flex h-10 items-center rounded-md text-sm font-medium transition-colors ${
+                className={`${styles.navLink} relative flex h-10 items-center rounded-md text-sm font-medium transition-colors ${
                   isSidebarCollapsed ? "justify-center px-0" : "gap-3 px-3"
-                } ${
-                  activeView === item.view
-                    ? "bg-white/10 text-white before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:bg-sky-400"
-                    : "text-slate-400 hover:bg-white/5 hover:text-white"
                 }`}
+                aria-current={activeView === item.view ? "page" : undefined}
                 title={isSidebarCollapsed ? item.label : item.title}
                 aria-label={isSidebarCollapsed ? item.label : undefined}
               >
-                <span className={activeView === item.view ? "text-sky-300" : "text-slate-500"}>
+                <span>
                   {item.icon}
                 </span>
                 {!isSidebarCollapsed ? item.label : null}
               </a>
+              </div>
             ))}
           </nav>
 
-          <div className={`border-t border-white/10 ${isSidebarCollapsed ? "p-2" : "p-3"}`}>
-            {!isSidebarCollapsed ? (
-              <div className="mb-3 flex items-center gap-2 px-2 text-xs text-slate-400">
-                <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" />
-                数据工作台
-              </div>
-            ) : (
-              <div className="mb-2 flex h-5 items-center justify-center" title="数据工作台">
-                <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.55)]" />
-              </div>
-            )}
+          <div className={`${styles.sidebarFooter} shrink-0 ${isSidebarCollapsed ? "p-2" : "p-3"}`}>
             {isSidebarCollapsed ? (
               <button
                 type="button"
                 onClick={toggleDashboardTheme}
-                className="flex h-9 w-full items-center justify-center rounded-md border border-white/10 bg-black/20 text-slate-300 transition-colors hover:bg-white/5 hover:text-white"
+                className={`${styles.themeButton} flex h-9 w-full items-center justify-center rounded-md transition-colors`}
                 title={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
                 aria-label={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
               >
@@ -2931,7 +2931,7 @@ export function ReportDashboard({
               </button>
             ) : (
               <div
-                className="grid grid-cols-2 gap-1 rounded-md border border-white/10 bg-black/20 p-1"
+                className={`${styles.themeSwitch} grid grid-cols-2 gap-1 rounded-md p-1`}
                 role="group"
                 aria-label="外观模式"
               >
@@ -2939,11 +2939,7 @@ export function ReportDashboard({
                   type="button"
                   onClick={() => selectDashboardTheme("light")}
                   aria-pressed={dashboardTheme === "light"}
-                  className={`inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors ${
-                    dashboardTheme === "light"
-                      ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30"
-                      : "text-slate-400 hover:bg-white/5 hover:text-white"
-                  }`}
+                  className={`${styles.themeButton} inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors`}
                 >
                   <Sun className="size-3.5" />
                   浅色
@@ -2952,11 +2948,7 @@ export function ReportDashboard({
                   type="button"
                   onClick={() => selectDashboardTheme("dark")}
                   aria-pressed={dashboardTheme === "dark"}
-                  className={`inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors ${
-                    dashboardTheme === "dark"
-                      ? "bg-sky-400/15 text-sky-200 ring-1 ring-sky-400/30"
-                      : "text-slate-400 hover:bg-white/5 hover:text-white"
-                  }`}
+                  className={`${styles.themeButton} inline-flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors`}
                 >
                   <Moon className="size-3.5" />
                   深色
@@ -2967,7 +2959,12 @@ export function ReportDashboard({
         </aside>
 
         <div className="min-w-0 flex-1">
-          <header className="border-b border-slate-200 bg-white lg:hidden">
+          <header className="border-b border-slate-200 bg-white lg:hidden" onKeyDown={(event) => {
+            if (event.key === "Escape" && isMobileNavOpen) {
+              setIsMobileNavOpen(false);
+              mobileNavButton.current?.focus();
+            }
+          }}>
             <div className="flex items-center justify-between px-4 py-3">
               <div className="flex items-center gap-2.5">
                 <span className="flex size-8 items-center justify-center rounded-md bg-slate-950 text-sky-300">
@@ -2978,16 +2975,29 @@ export function ReportDashboard({
                   <div className="text-[10px] text-slate-500">个人市场终端</div>
                 </div>
               </div>
+              <div className="flex items-center gap-2">
+              <button
+                ref={mobileNavButton}
+                type="button"
+                onClick={() => setIsMobileNavOpen((open) => !open)}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3 text-xs font-semibold text-slate-700"
+                aria-expanded={isMobileNavOpen}
+                aria-controls="mobile-navigation"
+              >
+                栏目 <ChevronDown className={`size-3.5 transition-transform ${isMobileNavOpen ? "rotate-180" : ""}`} />
+              </button>
               <button
                 type="button"
                 onClick={toggleDashboardTheme}
                 className="flex size-9 items-center justify-center rounded-md border border-slate-200 text-slate-600"
                 title={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
+                aria-label={dashboardTheme === "dark" ? "切换浅色模式" : "切换深色模式"}
               >
                 {dashboardTheme === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
               </button>
+              </div>
             </div>
-            <nav className="grid grid-cols-3 gap-1 border-t border-slate-200 bg-slate-50 p-2 sm:grid-cols-5" aria-label="主导航">
+            <nav id="mobile-navigation" hidden={!isMobileNavOpen} className={styles.mobileNav} aria-label="主导航">
               {navItems.map((item) => (
                 <a
                   key={item.view}
@@ -2999,6 +3009,7 @@ export function ReportDashboard({
                       : "text-slate-600 hover:bg-white hover:text-slate-950"
                   }`}
                   title={item.title}
+                  aria-current={activeView === item.view ? "page" : undefined}
                 >
                   {item.icon}
                   <span className="truncate">{item.label}</span>
@@ -3008,17 +3019,16 @@ export function ReportDashboard({
           </header>
 
           <div className="workspace-header border-b border-slate-200 bg-white">
-            <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-5 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
-              <div>
+            <div className={`${styles.workspaceHeading} mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8`}>
+              <div className="min-w-0">
                 <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
-                  <span className="font-mono text-sky-600">MARKET / {navItems.find((item) => item.view === activeView)?.label}</span>
-                  <span className="h-3 w-px bg-slate-300" />
+                  <span className="font-mono text-sky-600">{navItems.find((item) => item.view === activeView)?.label}</span>
                   <span className="inline-flex items-center gap-1.5 font-mono font-normal">
                     <Clock3 className="size-3.5" />
                     {activeTimestamp}
                   </span>
                 </div>
-                <h1 className="text-2xl font-semibold tracking-normal text-slate-950 md:text-3xl">
+                <h1 className="text-xl font-semibold leading-tight text-slate-950 sm:text-2xl">
                   {activeTitle}
                 </h1>
               </div>
@@ -3127,7 +3137,7 @@ export function ReportDashboard({
             </div>
           </div>
 
-          <div className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 ${activeView === "fx" ? "py-2" : "py-5 lg:py-6"}`}>
+          <div id="workspace-content" tabIndex={-1} className={`mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8 ${activeView === "fx" ? "py-2" : "py-5 lg:py-6"}`}>
             {activeView === "report" && error ? (
               <div className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
@@ -3145,7 +3155,7 @@ export function ReportDashboard({
           <>
             <MarketPulseGrid items={report.marketPulse} />
 
-            <div className="mb-6 grid gap-4 lg:grid-cols-2">
+            <div className="mb-6 grid items-start gap-6 lg:grid-cols-2">
               <CalendarPanel
                 title="今日宏观日历"
                 subtitle="优先展示可能影响利率、汇率和中国资产定价的事件，时间均已换算为北京时间（UTC+8）"

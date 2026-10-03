@@ -1,0 +1,223 @@
+.shell {
+  --desk-surface: #ffffff;
+  --desk-border: #dde3e7;
+  --desk-ink: #20272d;
+  --desk-muted: #64717b;
+  --desk-hover: #edf2f3;
+  --desk-accent: #087e8b;
+  --desk-selected: #e4f2f2;
+  background: #f4f6f7;
+  font-variant-numeric: tabular-nums;
+}
+
+:global(html[data-theme="dark"]) .shell {
+  --desk-surface: #191c20;
+  --desk-border: #34383e;
+  --desk-ink: #ecedef;
+  --desk-muted: #a2a9b1;
+  --desk-hover: #262b30;
+  --desk-accent: #69cbd0;
+  --desk-selected: #1d363a;
+}
+
+.skipLink {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 40;
+  padding: 10px 16px;
+  background: var(--desk-surface);
+  color: var(--desk-ink);
+  transform: translateY(-150%);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+.sidebar {
+  height: 100dvh;
+  border-right: 1px solid var(--desk-border);
+  background: var(--desk-surface);
+  color: var(--desk-ink);
+}
+
+.brand,
+.sidebarFooter {
+  border-color: var(--desk-border);
+  border-style: solid;
+  border-width: 0 0 1px;
+}
+
+.sidebarFooter {
+  border-width: 1px 0 0;
+}
+
+.brandIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1px solid var(--desk-border);
+  border-radius: 6px;
+  color: var(--desk-accent);
+}
+
+.sidebarToggle {
+  border: 1px solid var(--desk-border);
+  background: var(--desk-surface);
+  color: var(--desk-muted);
+}
+
+.sidebarToggle:hover {
+  color: var(--desk-accent);
+}
+
+.navGroup {
+  padding: 14px 12px 7px;
+  color: var(--desk-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.navLink {
+  margin-bottom: 2px;
+  color: var(--desk-muted);
+}
+
+.navLink:hover {
+  background: var(--desk-hover);
+  color: var(--desk-ink);
+}
+
+.navLink[aria-current="page"] {
+  background: var(--desk-selected);
+  color: var(--desk-accent);
+  box-shadow: inset 3px 0 var(--desk-accent);
+}
+
+.themeSwitch {
+  background: var(--desk-hover);
+}
+
+.themeButton {
+  color: var(--desk-muted);
+}
+
+.themeButton:hover {
+  color: var(--desk-ink);
+}
+
+.themeButton[aria-pressed="true"] {
+  background: var(--desk-surface);
+  color: var(--desk-ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.mobileNav:not([hidden]) {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 8px;
+  border-top: 1px solid var(--desk-border);
+  background: var(--desk-hover);
+}
+
+.workspaceHeading > button {
+  flex-shrink: 0;
+  background: #087e8b;
+  white-space: nowrap;
+}
+
+.workspaceHeading > button:hover:not(:disabled) {
+  background: #096773;
+}
+
+.workspaceHeading > button:disabled {
+  background: #71858b;
+}
+
+.marketStrip {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--desk-border);
+  border-radius: 6px;
+  background: var(--desk-border);
+}
+
+.marketCell {
+  min-width: 0;
+  padding: 12px;
+  background: var(--desk-surface);
+}
+
+.marketValue {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin-top: 8px;
+}
+
+.calendarPanel,
+.briefSection {
+  min-width: 0;
+  border-top: 2px solid var(--desk-border);
+}
+
+.calendarHeader {
+  padding: 14px 0 12px;
+  border-bottom: 1px solid var(--desk-border);
+}
+
+.calendarRow {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 0;
+  transition: background-color 150ms;
+}
+
+.calendarRow:hover {
+  background: var(--desk-hover);
+}
+
+.briefSection {
+  padding-top: 16px;
+}
+
+@media (min-width: 768px) {
+  .marketStrip {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .marketValue {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .marketGroup {
+    display: none;
+  }
+}
+
+@media (max-width: 479px) {
+  .workspaceHeading > button {
+    height: 36px;
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+
+  .calendarRow {
+    grid-template-columns: 3.5rem minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+}
