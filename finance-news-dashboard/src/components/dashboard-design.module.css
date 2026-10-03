@@ -42,6 +42,10 @@
   color: var(--desk-ink);
 }
 
+.sidebarNav {
+  overscroll-behavior-y: contain;
+}
+
 .brand,
 .sidebarFooter {
   border-color: var(--desk-border);

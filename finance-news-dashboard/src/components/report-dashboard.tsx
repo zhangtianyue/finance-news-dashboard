@@ -2885,7 +2885,7 @@ export function ReportDashboard({
           </div>
 
           <nav
-            className={`min-h-0 flex-1 overflow-y-auto py-3 ${isSidebarCollapsed ? "px-2" : "px-2.5"}`}
+            className={`${styles.sidebarNav} min-h-0 flex-1 overflow-y-auto py-3 ${isSidebarCollapsed ? "px-2" : "px-2.5"}`}
             aria-label="主导航"
           >
             {navItems.map((item) => (
