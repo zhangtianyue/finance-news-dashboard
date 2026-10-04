@@ -107,6 +107,17 @@ function SnapshotNotice({
   );
 }
 
+function UsdAmount({ value }: { value: string }) {
+  const amount = value.match(/^(.*?)(亿美元|万美元|美元)$/);
+  if (!amount) return <span className="inline-block">{value}</span>;
+  return (
+    <>
+      <span className="inline-block">{amount[1]}</span><wbr />
+      <span className="inline-block">{amount[2]}</span>
+    </>
+  );
+}
+
 function SummaryCard({
   label,
   value,
@@ -120,13 +131,15 @@ function SummaryCard({
   valueClassName?: string;
   className?: string;
 }) {
+  const amount = value.match(/^(.*?)(亿美元|万美元|美元)$/);
   return (
-    <article className={`min-w-0 px-4 py-3 sm:px-5 ${className}`}>
+    <article className={`min-w-0 px-3 py-3 xl:px-5 ${className}`}>
       <div className="text-xs font-semibold text-slate-500">{label}</div>
-      <div className={`mt-1.5 truncate font-mono text-base font-semibold tracking-normal sm:text-xl ${valueClassName}`}>
-        {value}
+      <div className={`mt-1.5 flex flex-wrap items-baseline gap-x-1 font-mono text-base font-semibold tracking-normal xl:text-xl ${valueClassName}`}>
+        <span className="whitespace-nowrap">{amount ? amount[1] : value}</span>
+        {amount ? <span className="whitespace-nowrap text-xs font-medium">{amount[2]}</span> : null}
       </div>
-      <div className="mt-1 truncate text-[11px] leading-4 text-slate-500">{detail}</div>
+      <div className="mt-1 text-[11px] leading-4 text-slate-500">{detail}</div>
     </article>
   );
 }
@@ -189,7 +202,7 @@ function DesktopAssetTable({ assets }: { assets: StablecoinAsset[] }) {
               <td className="px-3 py-3"><AssetIdentity asset={asset} /></td>
               <td className="px-3 py-3 text-right">
                 <div className="font-mono text-sm font-semibold text-slate-950">
-                  {formatUsdYi(asset.marketCap)}
+                  <UsdAmount value={formatUsdYi(asset.marketCap)} />
                 </div>
                 <div className="mt-1 text-[10px] text-slate-500">
                   占比 {asset.dominance.toFixed(2)}%
@@ -197,7 +210,7 @@ function DesktopAssetTable({ assets }: { assets: StablecoinAsset[] }) {
               </td>
               {[asset.change1d, asset.change7d, asset.change30d].map((change, changeIndex) => (
                 <td key={changeIndex} className={`px-3 py-3 text-right font-mono text-xs font-semibold ${changeClass(change)}`}>
-                  {formatSignedUsd(change)}
+                  <UsdAmount value={formatSignedUsd(change)} />
                 </td>
               ))}
               <td className="px-3 py-3"><PegBadge asset={asset} /></td>
@@ -224,7 +237,7 @@ function MobileAssetList({ assets }: { assets: StablecoinAsset[] }) {
           <div className="mt-4 grid grid-cols-4 gap-2 border-t border-slate-100 pt-3 text-right">
             <div className="text-left">
               <div className="text-[10px] text-slate-500">规模</div>
-              <div className="mt-1 font-mono text-xs font-semibold text-slate-950">{formatUsdYi(asset.marketCap)}</div>
+              <div className="mt-1 font-mono text-xs font-semibold text-slate-950"><UsdAmount value={formatUsdYi(asset.marketCap)} /></div>
             </div>
             {[
               ["1日", asset.change1d],
@@ -234,7 +247,7 @@ function MobileAssetList({ assets }: { assets: StablecoinAsset[] }) {
               <div key={String(label)}>
                 <div className="text-[10px] text-slate-500">{label}</div>
                 <div className={`mt-1 font-mono text-[11px] font-semibold ${changeClass(Number(change))}`}>
-                  {formatSignedUsd(Number(change))}
+                  <UsdAmount value={formatSignedUsd(Number(change))} />
                 </div>
               </div>
             ))}

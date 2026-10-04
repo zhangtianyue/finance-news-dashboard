@@ -8,15 +8,14 @@ export const metadata: Metadata = {
 };
 
 const themeInitializationScript = `
+let storedTheme;
 try {
-  const storedTheme = localStorage.getItem("finance-dashboard-theme");
-  const theme = storedTheme === "light" || storedTheme === "dark"
-    ? storedTheme
-    : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  document.documentElement.dataset.theme = theme;
-} catch {
-  document.documentElement.dataset.theme = "light";
-}
+  storedTheme = localStorage.getItem("finance-dashboard-theme");
+} catch {}
+const theme = storedTheme === "light" || storedTheme === "dark"
+  ? storedTheme
+  : (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+document.documentElement.dataset.theme = theme;
 `;
 
 export default function RootLayout({

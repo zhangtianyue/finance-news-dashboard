@@ -214,6 +214,24 @@
 }
 
 @media (max-width: 479px) {
+  .marketCell {
+    padding: 8px 10px;
+  }
+
+  .marketGroup {
+    display: none;
+  }
+
+  .marketValue {
+    margin-top: 4px;
+    gap: 2px 4px;
+  }
+
+  .marketNumber {
+    font-size: 14px;
+    line-height: 20px;
+  }
+
   .workspaceHeading > button {
     height: 36px;
     padding-inline: 10px;

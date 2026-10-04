@@ -27,7 +27,21 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { MouseEvent, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Activity as PreservedActivity,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  hasOlderShareSnapshot,
+  persistDashboardTheme,
+  qdiiQuoteTimeLabel,
+  resolveDashboardTheme,
+} from "@/lib/dashboard-ui";
+import type { DashboardTheme } from "@/lib/dashboard-ui";
 import type {
   GlobalValuationSnapshot,
   IndexValuation,
@@ -67,7 +81,6 @@ export type MarketHeatMode =
   | "sectors"
   | "stock-panorama"
   | "sector-panorama";
-type DashboardTheme = "light" | "dark";
 type DashboardNavItem = {
   view: DashboardView;
   label: string;
@@ -125,10 +138,10 @@ function readMarketHeatModeFromLocation() {
 function readDashboardTheme() {
   if (typeof window === "undefined") return "light";
 
-  const storedTheme = window.localStorage.getItem(dashboardThemeStorageKey);
-  if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
-
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return resolveDashboardTheme(
+    () => window.localStorage.getItem(dashboardThemeStorageKey),
+    window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
 }
 
 function dashboardDocumentTitle(view: DashboardView) {
@@ -319,7 +332,7 @@ function MarketPulseGrid({ items }: { items: MarketPulseItem[] }) {
                   <span className={`${styles.marketGroup} shrink-0 text-[10px] text-slate-400`}>{item.group}</span>
                 </div>
                 <div className={styles.marketValue}>
-                  <span className="whitespace-nowrap font-mono text-base font-semibold text-slate-950 sm:text-lg">
+                  <span className={`${styles.marketNumber} whitespace-nowrap font-mono text-base font-semibold text-slate-950 sm:text-lg`}>
                     {item.displayValue}
                   </span>
                   <span className={`shrink-0 font-mono text-[11px] font-semibold sm:text-xs ${changeClass}`}>
@@ -2012,8 +2025,8 @@ function QdiiEtfCard({
           <div className="mt-1 font-mono font-semibold text-slate-950">
             {formatShares(quote?.totalShares)}
             {quote?.totalSharesDate ? (
-              <span className="ml-2 font-normal text-slate-500">
-                {formatShortDate(quote.totalSharesDate)}
+              <span className={`ml-2 font-normal ${hasOlderShareSnapshot(quote) ? "text-amber-700" : "text-slate-500"}`}>
+                {hasOlderShareSnapshot(quote) ? "旧快照 · " : ""}{quote.totalSharesDate}
               </span>
             ) : null}
           </div>
@@ -2199,8 +2212,8 @@ function QdiiEtfGroups({
                               </span>
                             </div>
                             {quote?.totalSharesDate ? (
-                              <div className="whitespace-nowrap font-mono text-[11px] text-slate-500">
-                                {formatShortDate(quote.totalSharesDate)}
+                              <div className={`font-mono text-[11px] ${hasOlderShareSnapshot(quote) ? "text-amber-700" : "text-slate-500"}`}>
+                                {hasOlderShareSnapshot(quote) ? "旧快照 · " : ""}{quote.totalSharesDate}
                               </div>
                             ) : null}
                             <div
@@ -2317,6 +2330,7 @@ export function ReportDashboard({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const mobileNavButton = useRef<HTMLButtonElement>(null);
+  const previousView = useRef(activeView);
   const [hasRefreshedValuations, setHasRefreshedValuations] = useState(false);
   const [hasRefreshedQdii, setHasRefreshedQdii] = useState(false);
   const [isValuationLoading, setIsValuationLoading] = useState(false);
@@ -2332,15 +2346,18 @@ export function ReportDashboard({
   const [qdiiMessage, setQdiiMessage] = useState<string | null>(null);
   const [dividendSnapshot, setDividendSnapshot] = useState<AshareDividendSnapshot | null>(null);
   const [isDividendLoading, setIsDividendLoading] = useState(false);
+  const [hasRequestedDividends, setHasRequestedDividends] = useState(false);
   const [dividendMessage, setDividendMessage] = useState<string | null>(null);
   const hasAutoRefreshedDividends = useRef(false);
   const [marketHeatMode, setMarketHeatMode] =
     useState<MarketHeatMode>(initialMarketHeatMode);
   const [stockHeatSnapshot, setStockHeatSnapshot] = useState<StockHeatSnapshot | null>(null);
   const [isStockHeatLoading, setIsStockHeatLoading] = useState(false);
+  const [hasRequestedStockHeat, setHasRequestedStockHeat] = useState(false);
   const [stockHeatMessage, setStockHeatMessage] = useState<string | null>(null);
   const [polymarketSnapshot, setPolymarketSnapshot] = useState<PolymarketHotSnapshot | null>(null);
   const [isPolymarketLoading, setIsPolymarketLoading] = useState(false);
+  const [hasRequestedPolymarket, setHasRequestedPolymarket] = useState(false);
   const [polymarketMessage, setPolymarketMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2384,8 +2401,10 @@ export function ReportDashboard({
 
   const selectDashboardTheme = useCallback((nextTheme: DashboardTheme) => {
     setDashboardTheme(nextTheme);
-    window.localStorage.setItem(dashboardThemeStorageKey, nextTheme);
     document.documentElement.dataset.theme = nextTheme;
+    persistDashboardTheme(nextTheme, (theme) => {
+      window.localStorage.setItem(dashboardThemeStorageKey, theme);
+    });
   }, []);
 
   const toggleDashboardTheme = useCallback(() => {
@@ -2452,12 +2471,12 @@ export function ReportDashboard({
       setQdiiQuotes(quotes);
       setQdiiMessage(
         needsShareRefresh
-          ? "QDII 价格、溢价率和申购状态已更新；总份额使用每日定时快照"
-          : "QDII 价格、溢价率和申购状态已更新，总份额使用快照",
+          ? "已检查 QDII 行情和申购状态；部分总份额缺失或早于行情日期，请按每行日期核对"
+          : "已检查 QDII 行情和申购状态，各项数据日期见表格",
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : "QDII 行情更新失败";
-      setQdiiMessage(`${message}，已保留列表结构`);
+      setQdiiMessage(`${message}，已保留现有数据和列表`);
     } finally {
       setIsQdiiLoading(false);
     }
@@ -2518,6 +2537,7 @@ export function ReportDashboard({
   }, []);
 
   const refreshDividendStocks = useCallback(async function refreshDividendStocks(force = false) {
+    setHasRequestedDividends(true);
     setIsDividendLoading(true);
     setDividendMessage(`正在更新 A 股股息率高于 ${ashareDividendMinimumYield}% 的公司...`);
 
@@ -2546,6 +2566,7 @@ export function ReportDashboard({
   }, []);
 
   async function refreshPolymarketHotspots() {
+    setHasRequestedPolymarket(true);
     setIsPolymarketLoading(true);
     setPolymarketMessage("正在更新 Polymarket 热点...");
 
@@ -2566,6 +2587,7 @@ export function ReportDashboard({
   }
 
   async function refreshStockHeat(force = false) {
+    setHasRequestedStockHeat(true);
     setIsStockHeatLoading(true);
     setStockHeatMessage("正在更新 A 股和美股热度...");
 
@@ -2598,8 +2620,8 @@ export function ReportDashboard({
       return;
     }
 
-    hasAutoRefreshedReport.current = true;
     const timer = window.setTimeout(() => {
+      hasAutoRefreshedReport.current = true;
       void refreshReport();
     }, 0);
 
@@ -2618,6 +2640,13 @@ export function ReportDashboard({
     window.addEventListener("popstate", syncViewFromUrl);
     return () => window.removeEventListener("popstate", syncViewFromUrl);
   }, []);
+
+  useLayoutEffect(() => {
+    if (previousView.current !== activeView) {
+      window.scrollTo({ top: 0, left: 0, behavior: "instant" });
+      previousView.current = activeView;
+    }
+  }, [activeView]);
 
   useEffect(() => {
     const preferredTheme = readDashboardTheme();
@@ -2683,8 +2712,8 @@ export function ReportDashboard({
       return;
     }
 
-    hasAutoRefreshedStablecoins.current = true;
     const timer = window.setTimeout(() => {
+      hasAutoRefreshedStablecoins.current = true;
       void refreshStablecoins();
     }, 0);
 
@@ -2709,7 +2738,7 @@ export function ReportDashboard({
   }, [activeView, hasRefreshedQdii, isQdiiLoading, qdiiQuotes, refreshQdiiQuotes]);
 
   useEffect(() => {
-    if (activeView !== "dividends" || dividendSnapshot || isDividendLoading) {
+    if (activeView !== "dividends" || hasRequestedDividends || dividendSnapshot || isDividendLoading) {
       return;
     }
 
@@ -2718,11 +2747,12 @@ export function ReportDashboard({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [activeView, dividendSnapshot, isDividendLoading, refreshDividendStocks]);
+  }, [activeView, hasRequestedDividends, dividendSnapshot, isDividendLoading, refreshDividendStocks]);
 
   useEffect(() => {
     if (
       activeView !== "polymarket" ||
+      hasRequestedStockHeat ||
       stockHeatSnapshot ||
       isStockHeatLoading
     ) {
@@ -2734,11 +2764,12 @@ export function ReportDashboard({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [activeView, marketHeatMode, stockHeatSnapshot, isStockHeatLoading]);
+  }, [activeView, hasRequestedStockHeat, marketHeatMode, stockHeatSnapshot, isStockHeatLoading]);
 
   useEffect(() => {
     if (
       activeView !== "predictions" ||
+      hasRequestedPolymarket ||
       polymarketSnapshot ||
       isPolymarketLoading
     ) {
@@ -2750,13 +2781,15 @@ export function ReportDashboard({
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [activeView, polymarketSnapshot, isPolymarketLoading]);
+  }, [activeView, hasRequestedPolymarket, polymarketSnapshot, isPolymarketLoading]);
 
   const activeTimestamp =
     activeView === "report"
       ? report.generatedAtLabel
       : activeView === "fx"
         ? "每日参考汇率"
+      : activeView === "qdii"
+        ? qdiiQuoteTimeLabel(Object.values(qdiiQuotes))
       : activeView === "stablecoins"
         ? stablecoinSnapshot?.updatedAtLabel ?? "待更新"
       : activeView === "dividends"
@@ -3347,11 +3380,13 @@ export function ReportDashboard({
           <FxMatrixPanel />
         ) : activeView === "cross-market" ? (
           <CrossMarketPanel />
-        ) : activeView === "dca" ? (
+        ) : null}
+        <PreservedActivity mode={activeView === "dca" ? "visible" : "hidden"}>
           <DcaBacktestPanel theme={dashboardTheme} initialToday={initialToday} />
-        ) : (
+        </PreservedActivity>
+        <PreservedActivity mode={activeView === "loan" ? "visible" : "hidden"}>
           <LoanCalculatorPanel theme={dashboardTheme} />
-        )}
+        </PreservedActivity>
           </div>
         </div>
       </div>

@@ -154,6 +154,19 @@ html[data-theme="dark"] .dashboard-shell .text-amber-800 {
   color: #fbbf24 !important;
 }
 
+html[data-theme="dark"] .dashboard-shell .text-sky-600,
+html[data-theme="dark"] .dashboard-shell .text-sky-700,
+html[data-theme="dark"] .dashboard-shell .text-sky-800,
+html[data-theme="dark"] .dashboard-shell .hover\:text-sky-900:hover {
+  color: #7dd3fc !important;
+}
+
+html[data-theme="dark"] .dashboard-shell .text-violet-600,
+html[data-theme="dark"] .dashboard-shell .text-violet-700,
+html[data-theme="dark"] .dashboard-shell .text-violet-800 {
+  color: #c4b5fd !important;
+}
+
 .dca-chart-placeholder {
   background-image: linear-gradient(#e5e7eb 1px, transparent 1px),
     linear-gradient(90deg, #e5e7eb 1px, transparent 1px);
