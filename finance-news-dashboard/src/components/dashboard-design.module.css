@@ -196,6 +196,45 @@
   padding-top: 16px;
 }
 
+.qdiiTableFrame {
+  container: qdii-table / inline-size;
+}
+
+.qdiiTrackingSummary {
+  display: none;
+}
+
+@container qdii-table (max-width: 1050px) {
+  .qdiiTable col:nth-child(1) { width: 8%; }
+  .qdiiTable col:nth-child(2) { width: 14%; }
+  .qdiiTable col:nth-child(3) { width: 9%; }
+  .qdiiTable col:nth-child(4) { width: 7%; }
+  .qdiiTable col:nth-child(5) { width: 10%; }
+  .qdiiTable col:nth-child(6) { width: 8%; }
+  .qdiiTable col:nth-child(7) { width: 16%; }
+  .qdiiTable col:nth-child(8) { width: 20%; }
+  .qdiiTable col:nth-child(9) { width: 8%; }
+  .qdiiTable col:nth-child(10),
+  .qdiiTable th:nth-child(10),
+  .qdiiTable td:nth-child(10) {
+    display: none;
+  }
+
+  .qdiiTable th,
+  .qdiiTable td {
+    padding-inline: 6px;
+  }
+
+  .qdiiTable td:nth-child(3) div,
+  .qdiiTable td:nth-child(5) div {
+    white-space: normal;
+  }
+
+  .qdiiTrackingSummary {
+    display: block;
+  }
+}
+
 @media (min-width: 768px) {
   .marketStrip {
     grid-template-columns: repeat(5, minmax(0, 1fr));

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFile } from "node:child_process";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { access, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type { QdiiEtfQuote } from "@/lib/global-valuations";
 import { qdiiGroups } from "@/lib/global-valuations";
+import { datePart, numberOrNull, positiveNumber, qdiiPremium, selectQdiiPrice,
+  shanghaiDateTimeFromSeconds, shareMetrics, validDate } from "@/lib/qdii-metrics";
+import { readQdiiShareHistory } from "@/lib/qdii-share-store";
+import { refreshQdiiShares } from "@/lib/qdii-shares";
 
 type EastmoneyQuote = {
   f2?: number;
@@ -13,11 +17,6 @@ type EastmoneyQuote = {
   f12?: string;
   f124?: number;
   f297?: number;
-};
-
-type EastmoneyShareInfo = {
-  totalShares: number | null;
-  sourceTime: string | null;
 };
 
 type FundEstimate = {
@@ -39,13 +38,6 @@ type DailyQuote = {
   sourceName?: string;
 };
 
-type EastmoneyMobileFundInfo = {
-  Datas?: {
-    DWJZ?: string;
-    LJJZ?: string;
-  } | null;
-};
-
 type FundApplyStatus = {
   subscriptionStatus: string | null;
   redemptionStatus: string | null;
@@ -59,51 +51,29 @@ type FundApplyStatus = {
   subscriptionNote: string | null;
 };
 
-type ShareSnapshot = {
-  date: string;
-  totalShares: number;
-  sourceTime: string | null;
-  recordedAt: string;
-};
-
-type ShareSnapshotFile = {
-  version: 1;
-  updatedAt: string;
-  entries: Record<string, ShareSnapshot[]>;
-};
-
 type QdiiQuotesResponse = {
   updatedAt: string;
   quotes: Record<string, QdiiEtfQuote>;
   mode: "fast" | "full";
   cached?: boolean;
+  shareHistoryDegraded?: boolean;
 };
 
 const timeoutMs = 8000;
 const fastSourceTimeoutMs = 2000;
-const cacheTimeoutMs = 1200;
 const quoteCacheTtlMs = 45000;
 const applyStatusCacheTtlMs = 10 * 60 * 1000;
 const applyStatusFallbackTtlMs = 60 * 1000;
 const execFileAsync = promisify(execFile);
-const shareSnapshotPath = join(process.cwd(), "data/runtime/qdii-share-snapshots.json");
-const qdiiQuoteSeedPath = join(process.cwd(), "data/seeds/qdii-quotes.json");
-const shareSnapshotRedisKey = "qdii:share-snapshots:v1";
 const curlBinaryPath = "/usr/bin/curl";
-const eastmoneyStockDetailFields = [
-  "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18",
-  "f20,f21,f23,f38,f39,f40,f43,f44,f45,f46,f47,f48,f49,f50,f51,f52",
-  "f57,f58,f59,f60,f71,f84,f85,f86,f116,f117,f124",
-  "f127,f128,f129,f130,f131,f132,f133,f134,f135,f136,f137,f138,f139,f140,f141,f142,f143,f144,f145,f146,f147,f148,f149,f150",
-  "f161,f162,f163,f164,f165,f166,f167,f168,f169,f170,f171,f172,f173,f174,f175,f176,f177,f178,f179,f180,f181,f182,f183,f184,f185,f186,f187,f188,f189,f190,f191,f192,f193,f194,f195,f196,f197,f198,f199",
-  "f200,f201,f202,f203,f204,f205,f206,f207,f208,f209,f210,f211,f212,f213,f214,f215,f216,f217,f218,f219,f220,f221,f222,f223,f224,f225,f226,f227,f228,f229,f230,f231,f232,f233,f234,f235,f236,f237,f238,f239,f240,f241,f242,f243,f244,f245,f246,f247,f248,f249,f250,f251,f252,f253,f254,f255,f256,f257,f258,f259,f260,f261,f262,f263,f264,f265,f266,f267,f268,f269,f270,f271,f272,f273,f274,f275,f276,f277,f278,f279,f280,f281,f282,f283,f284,f285,f286,f287,f288,f289,f290,f291,f292,f293,f294,f295,f296,f297,f298,f299",
-].join(",");
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-let qdiiQuoteCache: { expiresAt: number; payload: QdiiQuotesResponse } | null = null;
+const qdiiQuoteCache = new Map<string, { expiresAt: number; payload: QdiiQuotesResponse }>();
+const qdiiQuoteRequests = new Map<string, Promise<QdiiQuotesResponse>>();
+let quoteCacheGeneration = 0;
 let applyStatusCache: { expiresAt: number; statuses: Map<string, FundApplyStatus> } | null = null;
 let applyStatusRefreshPromise: Promise<Map<string, FundApplyStatus>> | null = null;
 let curlAvailability: Promise<boolean> | null = null;
@@ -161,66 +131,20 @@ function tencentSymbol(code: string) {
   return `${code.startsWith("5") ? "sh" : "sz"}${code}`;
 }
 
-function eastmoneyPush2Hosts(code: string) {
-  const codeHost = `${(Number(code.slice(-2)) % 90) + 1}.push2.eastmoney.com`;
-  return [codeHost, "19.push2.eastmoney.com", "38.push2.eastmoney.com", "push2.eastmoney.com"];
-}
-
-function numberOrNull(value: unknown) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
 function eastmoneyDate(value: unknown) {
   const raw = String(value ?? "");
   if (!/^\d{8}$/.test(raw)) return null;
-  return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
-}
-
-function shanghaiDateTimeFromSeconds(value: unknown) {
-  const seconds = numberOrNull(value);
-  if (seconds == null || seconds <= 0) return null;
-
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(seconds * 1000));
-
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
-}
-
-function datePart(value: string | null) {
-  return value?.slice(0, 10) ?? null;
-}
-
-function shanghaiDate(date = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-
-  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
-  return `${get("year")}-${get("month")}-${get("day")}`;
+  const date = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+  return validDate(date) ? date : null;
 }
 
 function tencentDateTime(value: string | undefined) {
-  if (!value || !/^\d{14}$/.test(value)) {
+  if (!value || !/^\d{8}(?:[01]\d|2[0-3])[0-5]\d[0-5]\d$/.test(value)) {
     return { date: null, time: null };
   }
 
   const date = `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  if (!validDate(date)) return { date: null, time: null };
   const time = `${date} ${value.slice(8, 10)}:${value.slice(10, 12)}`;
   return { date, time };
 }
@@ -332,74 +256,11 @@ function formatSubscriptionCount(value: unknown) {
   return `${stripTrailingZeros(count)}笔`;
 }
 
-function validShareCount(value: unknown) {
-  const shares = numberOrNull(value);
-  return shares != null && shares > 0 ? shares : null;
-}
-
-function emptyShareSnapshotFile(): ShareSnapshotFile {
-  return {
-    version: 1,
-    updatedAt: new Date().toISOString(),
-    entries: {},
-  } satisfies ShareSnapshotFile;
-}
-
-function parseShareSnapshotFile(value: unknown) {
-  const parsed =
-    typeof value === "string" && value.length > 0
-      ? (JSON.parse(value) as ShareSnapshotFile)
-      : value;
-
-  if (
-    parsed &&
-    typeof parsed === "object" &&
-    (parsed as ShareSnapshotFile).version === 1 &&
-    typeof (parsed as ShareSnapshotFile).entries === "object"
-  ) {
-    return parsed as ShareSnapshotFile;
-  }
-
-  return emptyShareSnapshotFile();
-}
-
-function redisConfig() {
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-  return url && token ? { url, token } : null;
-}
-
 function isAuthorizedShareRefresh(request: NextRequest) {
   if (process.env.NODE_ENV !== "production") return true;
 
   const secret = process.env.CRON_SECRET;
   return Boolean(secret && request.headers.get("authorization") === `Bearer ${secret}`);
-}
-
-async function upstashCommand<T>(command: unknown[]) {
-  const config = redisConfig();
-  if (!config) return null;
-
-  const { controller, done } = withTimeout(cacheTimeoutMs);
-  try {
-    const response = await fetch(config.url, {
-      method: "POST",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${config.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(command),
-    });
-    const payload = (await response.json()) as { result?: T; error?: string };
-    if (!response.ok || payload.error) {
-      throw new Error(payload.error ?? `Upstash request failed: ${response.status}`);
-    }
-    return payload.result ?? null;
-  } finally {
-    done();
-  }
 }
 
 function normalizeSubscriptionOpen(status: string | null) {
@@ -539,7 +400,14 @@ function selectApplyStatuses(statuses: Map<string, FundApplyStatus>, codes: stri
 }
 
 async function readSeedApplyStatuses(codes: string[]) {
-  const seed = await readQdiiQuoteSeed();
+  let seed: QdiiQuotesResponse | null = null;
+  try {
+    const parsed = JSON.parse(await readFile(join(process.cwd(), "data/seeds/qdii-quotes.json"), "utf8")) as QdiiQuotesResponse;
+    const age = Date.now() - Date.parse(parsed.updatedAt);
+    if (parsed.quotes && Number.isFinite(age) && age >= -60_000 && age <= 3 * 86400_000) seed = parsed;
+  } catch {
+    // Only recent subscription metadata can be used; never restore seed prices or premiums.
+  }
   const seedDate = seed?.updatedAt?.slice(0, 10) ?? null;
   const statuses = new Map<string, FundApplyStatus>();
 
@@ -602,86 +470,6 @@ async function fetchFundApplyStatuses(
   return selectApplyStatuses(await applyStatusRefreshPromise, codes);
 }
 
-async function readShareSnapshots() {
-  if (redisConfig()) {
-    try {
-      const value = await upstashCommand<string | null>(["GET", shareSnapshotRedisKey]);
-      return value ? parseShareSnapshotFile(value) : emptyShareSnapshotFile();
-    } catch {
-      // Fall through to the local file cache so the quote API can still render.
-    }
-  }
-
-  try {
-    const text = await readFile(shareSnapshotPath, "utf8");
-    return parseShareSnapshotFile(text);
-  } catch {
-    return emptyShareSnapshotFile();
-  }
-}
-
-function latestPreviousShareSnapshot(snapshots: ShareSnapshot[], date: string) {
-  return snapshots
-    .filter((snapshot) => snapshot.date < date)
-    .sort((a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt))[0] ?? null;
-}
-
-function latestShareSnapshot(snapshots: ShareSnapshot[]) {
-  return [...snapshots].sort(
-    (a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt),
-  )[0] ?? null;
-}
-
-function upsertShareSnapshot(
-  file: ShareSnapshotFile,
-  code: string,
-  snapshot: ShareSnapshot | null,
-) {
-  if (!snapshot) return;
-
-  const snapshots = file.entries[code] ?? [];
-  const nextSnapshots = snapshots
-    .filter((item) => item.date !== snapshot.date)
-    .concat(snapshot)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.recordedAt.localeCompare(b.recordedAt))
-    .slice(-120);
-
-  file.entries[code] = nextSnapshots;
-  file.updatedAt = snapshot.recordedAt;
-}
-
-async function writeShareSnapshots(file: ShareSnapshotFile) {
-  if (redisConfig()) {
-    try {
-      await upstashCommand<string>(["SET", shareSnapshotRedisKey, JSON.stringify(file)]);
-      return;
-    } catch {
-      // Fall through to local write. Vercel storage must be configured for persistence.
-    }
-  }
-
-  try {
-    await mkdir(dirname(shareSnapshotPath), { recursive: true });
-    await writeFile(shareSnapshotPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
-  } catch {
-    // Vercel/serverless environments may not have persistent writable project storage.
-  }
-}
-
-async function readQdiiQuoteSeed() {
-  try {
-    const text = await readFile(qdiiQuoteSeedPath, "utf8");
-    const parsed = JSON.parse(text) as QdiiQuotesResponse;
-    if (parsed && typeof parsed === "object" && parsed.quotes && parsed.mode) {
-      return parsed;
-    }
-  } catch {
-    // Seed is best-effort; live sources still run when requested.
-  }
-
-  return null;
-}
-
 async function fetchMarketQuotes(codes: string[], options: { timeoutMs?: number } = {}) {
   try {
     const params = [
@@ -708,42 +496,6 @@ async function fetchMarketQuotes(codes: string[], options: { timeoutMs?: number 
   }
 }
 
-async function fetchEastmoneyShareInfo(code: string) {
-  const params = [
-    `secid=${secid(code)}`,
-    `fields=${eastmoneyStockDetailFields}`,
-  ].join("&");
-  const headers = {
-    Referer: `https://quote.eastmoney.com/${code.startsWith("5") ? "sh" : "sz"}${code}.html`,
-    "User-Agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-  };
-
-  for (const host of eastmoneyPush2Hosts(code)) {
-    try {
-      const data = await fetchJson<{ data?: { f84?: number; f85?: number; f86?: number } }>(
-        `https://${host}/api/qt/stock/get?${params}`,
-        headers,
-      );
-      const item = data.data;
-      const totalShares = validShareCount(item?.f84) ?? validShareCount(item?.f85);
-      if (totalShares != null) {
-        return {
-          totalShares,
-          sourceTime: shanghaiDateTimeFromSeconds(item?.f86),
-        } satisfies EastmoneyShareInfo;
-      }
-    } catch {
-      // Try the next push2 host; Eastmoney intermittently closes some connections.
-    }
-  }
-
-  return {
-    totalShares: null,
-    sourceTime: null,
-  } satisfies EastmoneyShareInfo;
-}
-
 async function fetchTencentQuotes(codes: string[], options: { timeoutMs?: number } = {}) {
   const { controller, done } = withTimeout(options.timeoutMs);
   try {
@@ -759,6 +511,7 @@ async function fetchTencentQuotes(codes: string[], options: { timeoutMs?: number
         },
       },
     );
+    if (!response.ok) return new Map<string, DailyQuote>();
     const text = await response.text();
     const quotes = new Map<string, DailyQuote>();
 
@@ -773,12 +526,12 @@ async function fetchTencentQuotes(codes: string[], options: { timeoutMs?: number
       const { date, time } = tencentDateTime(fields[30]);
 
       quotes.set(code, {
-        price: numberOrNull(fields[3]),
+        price: positiveNumber(fields[3]),
         priceDate: date,
         priceTime: time,
         changePct: numberOrNull(fields[32]),
         amount: amountFromDetail ?? (amountInWan != null ? amountInWan * 10000 : null),
-        realtimeEstimate: numberOrNull(fields[78]),
+        realtimeEstimate: positiveNumber(fields[78]),
         premiumRate: numberOrNull(fields[77]),
         sourceName: "腾讯行情 IOPV",
       });
@@ -895,224 +648,60 @@ async function fetchFundEstimate(code: string) {
   }
 }
 
-async function fetchEastmoneyMobileEstimate(code: string) {
-  const { controller, done } = withTimeout();
-  try {
-    const params = new URLSearchParams({
-      FCODE: code,
-      deviceid: "Wap",
-      plat: "Wap",
-      product: "EFund",
-      version: "2.0.0",
-    });
-    const response = await fetch(
-      `https://fundmobapi.eastmoney.com/FundMNewApi/FundMNBaseInfo?${params.toString()}`,
-      {
-        cache: "no-store",
-        signal: controller.signal,
-        headers: {
-          Referer: "https://m.1234567.com.cn/",
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
-        },
-      },
-    );
-    const data = (await response.json()) as EastmoneyMobileFundInfo;
-    return data.Datas ?? null;
-  } catch {
-    return null;
-  } finally {
-    done();
-  }
-}
-
-export async function GET(request: NextRequest) {
-  const refreshShares = request.nextUrl.searchParams.get("refreshShares") === "1";
-  const live = request.nextUrl.searchParams.get("live") === "1";
-  const loadSlowFallbacks = request.nextUrl.searchParams.get("details") === "1";
-  if (refreshShares && !isAuthorizedShareRefresh(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const now = Date.now();
-  if (!refreshShares && qdiiQuoteCache && qdiiQuoteCache.expiresAt > now) {
-    return NextResponse.json(
-      { ...qdiiQuoteCache.payload, cached: true },
-      {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      },
-    );
-  }
-
-  if (!live && !refreshShares) {
-    const seed = await readQdiiQuoteSeed();
-    if (seed) {
-      return NextResponse.json(
-        { ...seed, cached: true },
-        {
-          headers: {
-            "Cache-Control": "no-store",
-          },
-        },
-      );
-    }
-  }
-
+async function loadQdiiQuotes(loadSlowFallbacks: boolean): Promise<QdiiQuotesResponse> {
   const codes = [...new Set(qdiiGroups.flatMap((group) => group.items.map((item) => item.code)))];
   const sourceTimeout = loadSlowFallbacks ? timeoutMs : fastSourceTimeoutMs;
-  const [marketQuotes, shareSnapshots] = await Promise.all([
-    fetchMarketQuotes(codes, { timeoutMs: sourceTimeout }),
-    readShareSnapshots(),
-  ]);
-  const shareInfoTask = refreshShares
-    ? runLimited(codes, 3, async (code) => [code, await fetchEastmoneyShareInfo(code)] as const)
-    : Promise.resolve(codes.map((code) => [code, { totalShares: null, sourceTime: null }] as const));
   const fallbackQuoteTask = loadSlowFallbacks
     ? Promise.all([
         fetchSinaQuotes(codes),
         runLimited(codes, 8, async (code) => [code, await fetchDailyQuote(code)] as const),
-        runLimited(codes, 8, async (code) => [code, await fetchEastmoneyMobileEstimate(code)] as const),
         runLimited(codes, 8, async (code) => [code, await fetchFundEstimate(code)] as const),
       ] as const)
     : Promise.resolve([
         new Map<string, DailyQuote>(),
         codes.map((code) => [code, null] as const),
         codes.map((code) => [code, null] as const),
-        codes.map((code) => [code, null] as const),
       ] as const);
-  const [tencentQuotes, fallbackQuotes, shareInfos, applyStatuses] = await Promise.all([
+  const [marketQuotes, shareSnapshots, tencentQuotes, fallbackQuotes, applyStatuses] = await Promise.all([
+    fetchMarketQuotes(codes, { timeoutMs: sourceTimeout }),
+    readQdiiShareHistory(codes),
     fetchTencentQuotes(codes, { timeoutMs: sourceTimeout }),
     fallbackQuoteTask,
-    shareInfoTask,
-    fetchFundApplyStatuses(codes, {
-      timeoutMs: sourceTimeout,
-      allowFallback: loadSlowFallbacks,
-    }),
+    fetchFundApplyStatuses(codes, { timeoutMs: sourceTimeout, allowFallback: loadSlowFallbacks }),
   ]);
-  const [sinaQuotes, dailyQuotes, mobileEstimates, estimates] = fallbackQuotes;
+  const [sinaQuotes, dailyQuotes, estimates] = fallbackQuotes;
   const dailyQuoteMap = new Map(dailyQuotes);
-  const mobileEstimateMap = new Map(mobileEstimates);
   const estimateMap = new Map(estimates);
-  const shareInfoMap = new Map(shareInfos);
   const updatedAt = new Date().toISOString();
-
   const quotes: Record<string, QdiiEtfQuote> = {};
   for (const code of codes) {
     const market = marketQuotes.get(code);
     const tencentQuote = tencentQuotes.get(code);
-    const sinaQuote = sinaQuotes.get(code);
-    const dailyQuote = dailyQuoteMap.get(code);
     const estimate = estimateMap.get(code);
-    const price =
-      tencentQuote?.price ?? numberOrNull(market?.f2) ?? sinaQuote?.price ?? dailyQuote?.price ?? null;
-    const changePct =
-      tencentQuote?.changePct ??
-      numberOrNull(market?.f3) ??
-      sinaQuote?.changePct ??
-      dailyQuote?.changePct ??
-      null;
-    const amount =
-      tencentQuote?.amount ?? numberOrNull(market?.f6) ?? sinaQuote?.amount ?? dailyQuote?.amount ?? null;
-    const mobileEstimate = mobileEstimateMap.get(code);
-    const eastmoneyEstimate =
-      numberOrNull(mobileEstimate?.DWJZ) ?? numberOrNull(mobileEstimate?.LJJZ);
-    const tiantianEstimate = numberOrNull(estimate?.gsz) ?? numberOrNull(estimate?.dwjz);
-    const estimatedNav = tencentQuote?.realtimeEstimate ?? eastmoneyEstimate ?? tiantianEstimate;
-    const nav = estimatedNav;
-    const priceTime = tencentQuote?.priceTime ?? shanghaiDateTimeFromSeconds(market?.f124);
-    const priceDate =
-      tencentQuote?.priceDate ??
-      eastmoneyDate(market?.f297) ??
-      datePart(priceTime) ??
-      sinaQuote?.priceDate ??
-      dailyQuote?.priceDate ??
-      null;
-    const navTime =
-      tencentQuote?.realtimeEstimate != null
-        ? tencentQuote.priceTime ?? null
-        : eastmoneyEstimate != null
-          ? null
-          : estimate?.gztime ?? estimate?.jzrq ?? null;
+    const marketTime = shanghaiDateTimeFromSeconds(market?.f124);
+    const selected = selectQdiiPrice([
+      tencentQuote,
+      { price: positiveNumber(market?.f2), priceTime: marketTime,
+        priceDate: eastmoneyDate(market?.f297) ?? datePart(marketTime),
+        changePct: numberOrNull(market?.f3), amount: numberOrNull(market?.f6), sourceName: "东方财富行情" },
+      sinaQuotes.get(code), dailyQuoteMap.get(code),
+    ]);
+    const { price, priceDate, priceTime, changePct, amount } = selected;
+    const reference = positiveNumber(tencentQuote?.realtimeEstimate);
+    const estimated = positiveNumber(estimate?.gsz);
+    const nav = reference ?? estimated;
+    const navTime = reference != null ? tencentQuote?.priceTime ?? null : estimated != null ? estimate?.gztime ?? null : null;
     const navDate = datePart(navTime);
-    const navSource =
-      tencentQuote?.realtimeEstimate != null
-        ? "腾讯行情 IOPV"
-        : eastmoneyEstimate != null
-          ? "东方财富移动端估值"
-          : tiantianEstimate != null
-            ? "天天基金估算"
-            : "无数据";
-    const premiumRate =
-      tencentQuote?.premiumRate ?? (price != null && nav && nav > 0 ? (price / nav - 1) * 100 : null);
+    const navKind = reference != null ? "reference" : estimated != null ? "estimate" : "missing";
+    const navSource = reference != null ? "腾讯行情参考估值" : estimated != null ? "天天基金估算" : "无数据";
+    const premium = qdiiPremium({ price, nav, priceDate, navDate, priceTime, navTime,
+      quotedRate: tencentQuote?.premiumRate, sameProvider: reference != null && selected.sourceName === tencentQuote?.sourceName });
     const applyStatus = applyStatuses.get(code);
-    const shareInfo = shareInfoMap.get(code);
-    const liveTotalShares = shareInfo?.totalShares ?? null;
-    const liveShareSourceTime = shareInfo?.sourceTime ?? null;
-    const snapshotsForCode = shareSnapshots.entries[code] ?? [];
-    const latestStoredShareSnapshot = latestShareSnapshot(snapshotsForCode);
-    const liveTotalSharesDate =
-      liveTotalShares != null ? priceDate ?? datePart(liveShareSourceTime) ?? shanghaiDate() : null;
-    const shareSourceTime = liveShareSourceTime ?? latestStoredShareSnapshot?.sourceTime ?? null;
-    const totalShares = liveTotalShares ?? latestStoredShareSnapshot?.totalShares ?? null;
-    const totalSharesDate = liveTotalShares != null ? liveTotalSharesDate : latestStoredShareSnapshot?.date ?? null;
-    const previousShareSnapshot =
-      totalSharesDate != null
-        ? latestPreviousShareSnapshot(snapshotsForCode, totalSharesDate)
-        : null;
-    const netShareChange =
-      totalShares != null && previousShareSnapshot ? totalShares - previousShareSnapshot.totalShares : null;
-    const netShareChangePct =
-      netShareChange != null && previousShareSnapshot && previousShareSnapshot.totalShares > 0
-        ? (netShareChange / previousShareSnapshot.totalShares) * 100
-        : null;
-    const shareSnapshotNote =
-      liveTotalShares != null
-        ? previousShareSnapshot
-          ? `对比 ${previousShareSnapshot.date} 总份额`
-          : "已记录总份额，下一次有历史快照后可计算净申赎"
-        : latestStoredShareSnapshot
-          ? refreshShares
-            ? `使用 ${latestStoredShareSnapshot.date} 总份额快照，实时抓取暂未返回`
-            : `使用 ${latestStoredShareSnapshot.date} 总份额快照`
-          : refreshShares
-            ? "东财未返回总份额"
-            : "暂无总份额快照";
-
-    upsertShareSnapshot(
-      shareSnapshots,
-      code,
-      liveTotalShares != null && liveTotalSharesDate
-        ? {
-            date: liveTotalSharesDate,
-            totalShares: liveTotalShares,
-            sourceTime: liveShareSourceTime,
-            recordedAt: updatedAt,
-          }
-        : null,
-    );
-
-    const shareChangeSource =
-      liveTotalShares != null
-        ? "东方财富总份额 f84/f85"
-        : latestStoredShareSnapshot
-          ? "东方财富总份额快照"
-          : null;
-
+    const shares = shareMetrics(shareSnapshots.entries[code] ?? []);
     quotes[code] = {
-      code,
-      price,
-      priceDate,
-      priceTime,
-      changePct,
-      amount,
-      nav,
-      navDate,
-      navTime,
-      navSource,
-      premiumRate,
-      sourceName: tencentQuote?.sourceName ?? "东方财富行情 / 东方财富移动端估值",
+      code, price, priceDate, priceTime: priceTime ?? null, changePct, amount,
+      nav, navDate, navTime, navSource, navKind, ...premium,
+      sourceName: selected.sourceName ?? "无数据",
       subscriptionStatus: applyStatus?.subscriptionStatus ?? null,
       redemptionStatus: applyStatus?.redemptionStatus ?? null,
       subscriptionOpen: applyStatus?.subscriptionOpen ?? null,
@@ -1123,40 +712,45 @@ export async function GET(request: NextRequest) {
       subscriptionSource: applyStatus?.subscriptionSource ?? null,
       subscriptionSourceUrl: applyStatus?.subscriptionSourceUrl ?? null,
       subscriptionNote: applyStatus?.subscriptionNote ?? null,
-      totalShares,
-      totalSharesDate,
-      totalSharesTime: shareSourceTime,
-      previousTotalShares: previousShareSnapshot?.totalShares ?? null,
-      previousTotalSharesDate: previousShareSnapshot?.date ?? null,
-      netShareChange,
-      netShareChangePct,
-      shareChangeSource,
-      shareSnapshotNote,
-      updatedAt,
-      status: price != null && nav != null ? "ok" : price != null || nav != null ? "partial" : "missing",
+      ...shares, updatedAt,
+      status: premium.premiumRate != null && premium.premiumQuality !== "mismatch" ? "ok"
+        : price != null || nav != null ? "partial" : "missing",
     };
   }
+  return { updatedAt, quotes, mode: loadSlowFallbacks ? "full" : "fast",
+    shareHistoryDegraded: shareSnapshots.degraded } satisfies QdiiQuotesResponse;
+}
 
-  if (refreshShares) {
-    await writeShareSnapshots(shareSnapshots);
+export async function GET(request: NextRequest) {
+  const refreshShares = request.nextUrl.searchParams.get("refreshShares") === "1";
+  if (refreshShares && !isAuthorizedShareRefresh(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-
-  const payload = {
-    updatedAt,
-    quotes,
-    mode: refreshShares ? "full" : "fast",
-  } satisfies QdiiQuotesResponse;
-  qdiiQuoteCache = {
-    expiresAt: Date.now() + quoteCacheTtlMs,
-    payload,
-  };
-
-  return NextResponse.json(
-    payload,
-    {
-      headers: {
-        "Cache-Control": "no-store",
-      },
-    },
-  );
+  const refresh = refreshShares ? await refreshQdiiShares() : null;
+  if (refresh) { quoteCacheGeneration++; qdiiQuoteCache.clear(); }
+  const details = request.nextUrl.searchParams.get("details") === "1";
+  const generation = quoteCacheGeneration;
+  const key = `${details ? "full" : "fast"}:${generation}`;
+  const cached = qdiiQuoteCache.get(key);
+  let payload: QdiiQuotesResponse;
+  if (cached && cached.expiresAt > Date.now()) {
+    payload = { ...cached.payload, cached: true };
+  } else {
+    let pending = qdiiQuoteRequests.get(key);
+    if (!pending) {
+      pending = loadQdiiQuotes(details).then((data) => {
+        const hasQuotes = Object.values(data.quotes).some((quote) => quote.price != null);
+        if (generation === quoteCacheGeneration) {
+          qdiiQuoteCache.set(key, { expiresAt: Date.now() + (hasQuotes ? quoteCacheTtlMs : 5000), payload: data });
+        }
+        return data;
+      }).finally(() => { qdiiQuoteRequests.delete(key); });
+      qdiiQuoteRequests.set(key, pending);
+    }
+    payload = await pending;
+  }
+  return NextResponse.json({ ...payload, ...(refresh ? { shareRefresh: refresh } : {}) }, {
+    status: refresh?.status === "storage-failed" ? 503 : refresh?.status === "upstream-failed" ? 502 : 200,
+    headers: { "Cache-Control": "no-store" },
+  });
 }

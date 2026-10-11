@@ -42,6 +42,7 @@ import {
   resolveDashboardTheme,
 } from "@/lib/dashboard-ui";
 import type { DashboardTheme } from "@/lib/dashboard-ui";
+import { shareChangePresentation } from "@/lib/qdii-metrics";
 import type {
   GlobalValuationSnapshot,
   IndexValuation,
@@ -438,11 +439,6 @@ function formatMetric(value: number | null, suffix = "") {
 function formatStrictPercent(value: number | null | undefined) {
   if (value == null) return "N/A";
   return `${value.toFixed(2)}%`;
-}
-
-function formatShortDate(value: string | null | undefined) {
-  if (!value) return "N/A";
-  return value.slice(5);
 }
 
 function formatCompactDateTime(value: string | null | undefined) {
@@ -1805,130 +1801,6 @@ function formatShares(value: number | null | undefined) {
   return `${abs.toFixed(0)}份`;
 }
 
-function shareChangeLabel(value: number | null | undefined) {
-  if (value == null) return "待累计";
-  if (value > 0) return "净申购";
-  if (value < 0) return "净赎回";
-  return "无变化";
-}
-
-type ClientShareSnapshot = {
-  date: string;
-  totalShares: number;
-  sourceTime: string | null;
-  recordedAt: string;
-};
-
-type ClientShareSnapshotFile = Record<string, ClientShareSnapshot[]>;
-
-const qdiiShareSnapshotStorageKey = "finance-news-dashboard:qdii-share-snapshots:v1";
-
-function readClientShareSnapshots(): ClientShareSnapshotFile {
-  if (typeof window === "undefined") return {};
-
-  try {
-    const raw = window.localStorage.getItem(qdiiShareSnapshotStorageKey);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    return parsed && typeof parsed === "object" ? (parsed as ClientShareSnapshotFile) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeClientShareSnapshots(file: ClientShareSnapshotFile) {
-  if (typeof window === "undefined") return;
-
-  try {
-    window.localStorage.setItem(qdiiShareSnapshotStorageKey, JSON.stringify(file));
-  } catch {
-    // Browser storage may be disabled; server snapshots still work when available.
-  }
-}
-
-function latestClientShareSnapshot(snapshots: ClientShareSnapshot[]) {
-  return [...snapshots].sort(
-    (a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt),
-  )[0] ?? null;
-}
-
-function latestPreviousClientShareSnapshot(snapshots: ClientShareSnapshot[], date: string) {
-  return snapshots
-    .filter((snapshot) => snapshot.date < date)
-    .sort((a, b) => b.date.localeCompare(a.date) || b.recordedAt.localeCompare(a.recordedAt))[0] ?? null;
-}
-
-function upsertClientShareSnapshot(
-  file: ClientShareSnapshotFile,
-  code: string,
-  quote: QdiiEtfQuote,
-) {
-  if (quote.totalShares == null || !quote.totalSharesDate) return;
-
-  const snapshots = file[code] ?? [];
-  file[code] = snapshots
-    .filter((snapshot) => snapshot.date !== quote.totalSharesDate)
-    .concat({
-      date: quote.totalSharesDate,
-      totalShares: quote.totalShares,
-      sourceTime: quote.totalSharesTime,
-      recordedAt: quote.updatedAt,
-    })
-    .sort((a, b) => a.date.localeCompare(b.date) || a.recordedAt.localeCompare(b.recordedAt))
-    .slice(-120);
-}
-
-function enrichQdiiQuotesWithClientSnapshots(quotes: Record<string, QdiiEtfQuote>) {
-  const file = readClientShareSnapshots();
-  const nextQuotes: Record<string, QdiiEtfQuote> = {};
-  let shouldWrite = false;
-
-  for (const [code, quote] of Object.entries(quotes)) {
-    const snapshots = file[code] ?? [];
-    let nextQuote = quote;
-
-    if (quote.totalShares != null && quote.totalSharesDate) {
-      const previous = latestPreviousClientShareSnapshot(snapshots, quote.totalSharesDate);
-
-      if (!quote.previousTotalSharesDate && previous) {
-        const netShareChange = quote.totalShares - previous.totalShares;
-        nextQuote = {
-          ...quote,
-          previousTotalShares: previous.totalShares,
-          previousTotalSharesDate: previous.date,
-          netShareChange,
-          netShareChangePct:
-            previous.totalShares > 0 ? (netShareChange / previous.totalShares) * 100 : null,
-          shareChangeSource: quote.shareChangeSource ?? "浏览器本地总份额快照",
-          shareSnapshotNote: `对比浏览器本地 ${previous.date} 总份额快照`,
-        };
-      }
-
-      upsertClientShareSnapshot(file, code, quote);
-      shouldWrite = true;
-    } else {
-      const latest = latestClientShareSnapshot(snapshots);
-      if (latest) {
-        nextQuote = {
-          ...quote,
-          totalShares: latest.totalShares,
-          totalSharesDate: latest.date,
-          totalSharesTime: latest.sourceTime,
-          shareChangeSource: quote.shareChangeSource ?? "浏览器本地总份额快照",
-          shareSnapshotNote: `使用浏览器本地 ${latest.date} 总份额快照`,
-        };
-      }
-    }
-
-    nextQuotes[code] = nextQuote;
-  }
-
-  if (shouldWrite) {
-    writeClientShareSnapshots(file);
-  }
-
-  return nextQuotes;
-}
 
 function metricClass(value: number | null | undefined) {
   if (value == null) return "text-slate-500";
@@ -1960,6 +1832,49 @@ function shortTradeStatus(status: string | null | undefined) {
 function secondaryMarketStatus(status: string | null | undefined) {
   if (status === "场内交易") return "场内可交易";
   return `赎回 ${shortTradeStatus(status)}`;
+}
+
+function QdiiPremiumValue({ quote }: { quote: QdiiEtfQuote | undefined }) {
+  const quality = quote?.premiumQuality;
+  const warning = quality === "mismatch" || quality === "date-mismatch";
+  return (
+    <div title={quote?.premiumNote} className="mt-0.5">
+      <div className={`font-mono font-semibold ${metricClass(quote?.premiumRate)}`}>
+        {formatStrictPercent(quote?.premiumRate)}
+      </div>
+      {warning || quality === "calculated" ? (
+        <div className={`mt-0.5 text-[11px] font-normal ${warning ? "text-amber-700" : "text-slate-500"}`}>
+          {quality === "date-mismatch" ? "时点未匹配" : quality === "mismatch" ? "已重算 · 口径差异" : "计算值"}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function QdiiShareCell({ quote }: { quote: QdiiEtfQuote | undefined }) {
+  const display = shareChangePresentation(quote);
+  const exactShares = quote?.totalShares != null
+    ? `${quote.totalShares.toLocaleString("zh-CN", { maximumFractionDigits: 4 })} 份` : "暂无份额";
+  return (
+    <div className="space-y-1.5 text-xs" title={`${exactShares}；${quote?.shareSnapshotNote ?? "暂无服务器份额记录"}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-1 gap-y-0.5">
+        <span className="text-slate-500">总份额</span>
+        <span className="font-mono font-semibold text-slate-950">{formatShares(quote?.totalShares)}</span>
+      </div>
+      {quote?.totalSharesDate ? (
+        <div className={`font-mono text-[11px] ${hasOlderShareSnapshot(quote) ? "text-amber-700" : "text-slate-500"}`}>
+          {display.dateLabel} {quote.totalSharesDate}
+        </div>
+      ) : null}
+      <div className={`flex flex-wrap items-baseline justify-between gap-x-1 gap-y-0.5 font-semibold ${metricClass(display.value)}`}>
+        <span>{display.label}</span>
+        <span className="font-mono" title={display.value != null ? `${display.value.toLocaleString("zh-CN")} 份` : undefined}>
+          {display.value == null ? display.emptyLabel : formatShares(display.value)}
+        </span>
+      </div>
+      {display.range ? <div className="font-mono text-[11px] text-slate-500">{display.range}</div> : null}
+    </div>
+  );
 }
 
 function QdiiEtfCard({
@@ -2003,7 +1918,7 @@ function QdiiEtfCard({
           </div>
         </div>
         <div>
-          <div className="text-slate-500">实时估值</div>
+          <div className="text-slate-500">{quote?.navKind === "estimate" ? "估算净值" : "参考估值"}</div>
           <div className="mt-1 font-mono text-sm font-semibold text-slate-950">
             {formatRealtimeEstimate(quote?.nav)}
           </div>
@@ -2013,29 +1928,13 @@ function QdiiEtfCard({
         </div>
         <div>
           <div className="text-slate-500">溢价率</div>
-          <div className={`mt-1 font-mono text-sm font-semibold ${metricClass(quote?.premiumRate)}`}>
-            {formatMetric(quote?.premiumRate ?? null, "%")}
-          </div>
+          <QdiiPremiumValue quote={quote} />
         </div>
       </div>
 
       <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 text-xs sm:grid-cols-2">
         <div>
-          <div className="text-slate-500">份额 / 净申赎</div>
-          <div className="mt-1 font-mono font-semibold text-slate-950">
-            {formatShares(quote?.totalShares)}
-            {quote?.totalSharesDate ? (
-              <span className={`ml-2 font-normal ${hasOlderShareSnapshot(quote) ? "text-amber-700" : "text-slate-500"}`}>
-                {hasOlderShareSnapshot(quote) ? "旧快照 · " : ""}{quote.totalSharesDate}
-              </span>
-            ) : null}
-          </div>
-          <div className={`mt-1 font-semibold ${metricClass(quote?.netShareChange)}`}>
-            {shareChangeLabel(quote?.netShareChange)}{" "}
-            <span className="font-mono">
-              {quote?.netShareChange == null ? "首次记录" : formatShares(quote.netShareChange)}
-            </span>
-          </div>
+          <QdiiShareCell quote={quote} />
         </div>
         <div>
           <div className="text-slate-500">申购限制</div>
@@ -2085,7 +1984,7 @@ function QdiiEtfGroups({
           </div>
           <h2 className="text-xl font-semibold text-slate-950">按跟踪类型分组</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-            这些是 A 股场内可交易的跨境 ETF/QDII 代表产品。价格和涨跌幅来自东方财富，实时估值优先使用东方财富移动端口径；溢价率按场内现价相对实时估值计算。总份额来自东方财富行情快照，净申赎按本地历史快照差额估算。
+            溢价率以同日现价与参考估值核对。份额按服务器观察快照比较，观察日期不代表申赎发生日期，份额变化不等于资金流入金额。
           </p>
         </div>
         <div className="font-mono text-xs text-slate-500">
@@ -2122,8 +2021,8 @@ function QdiiEtfGroups({
               ))}
             </div>
 
-            <div className="hidden overflow-hidden rounded-md border border-slate-200 md:block">
-              <table className="w-full table-fixed border-collapse text-left text-xs">
+            <div className={`${styles.qdiiTableFrame} hidden overflow-hidden rounded-md border border-slate-200 md:block`}>
+              <table className={`${styles.qdiiTable} w-full table-fixed border-collapse text-left text-xs`}>
                 <colgroup>
                   <col className="w-[6%]" />
                   <col className="w-[10%]" />
@@ -2142,9 +2041,9 @@ function QdiiEtfGroups({
                     <th className="px-2 py-2 font-semibold">名称</th>
                     <th className="py-2 pl-2 pr-4 text-right font-semibold">现价/日期</th>
                     <th className="px-2 py-2 text-right font-semibold">涨跌幅</th>
-                    <th className="py-2 pl-2 pr-4 text-right font-semibold">实时估值</th>
+                    <th className="py-2 pl-2 pr-4 text-right font-semibold">参考估值</th>
                     <th className="py-2 pl-2 pr-4 text-right font-semibold">溢价率</th>
-                    <th className="px-2 py-2 font-semibold">份额/净申赎</th>
+                    <th className="px-2 py-2 font-semibold">份额/变化</th>
                     <th className="px-2 py-2 font-semibold">申购限制</th>
                     <th className="py-2 pl-2 pr-4 text-right font-semibold">成交额</th>
                     <th className="px-2 py-2 font-semibold">跟踪</th>
@@ -2159,10 +2058,13 @@ function QdiiEtfGroups({
                           {item.code}
                         </td>
                         <td className="px-2 py-2">
-                          <div className="whitespace-nowrap font-medium text-slate-950">
+                          <div className="break-words font-medium text-slate-950">
                             {item.name}
                           </div>
                           <div className="mt-1 text-xs text-slate-500">{item.manager}</div>
+                          <div className={`${styles.qdiiTrackingSummary} mt-1 text-[11px] text-slate-500`} title={item.note}>
+                            {item.tracking} / {item.market}
+                          </div>
                         </td>
                         <td
                           className={`py-2 pl-2 pr-4 text-right font-mono ${metricClass(
@@ -2198,44 +2100,13 @@ function QdiiEtfGroups({
                             quote?.premiumRate,
                           )}`}
                         >
-                          {formatMetric(quote?.premiumRate ?? null, "%")}
+                          <QdiiPremiumValue quote={quote} />
                         </td>
                         <td
                           className="px-2 py-2"
                           title={quote?.shareSnapshotNote ?? quote?.shareChangeSource ?? undefined}
                         >
-                          <div className="space-y-1.5 text-xs">
-                            <div className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-1.5">
-                              <span className="whitespace-nowrap text-slate-500">总份额</span>
-                              <span className="whitespace-nowrap font-mono font-semibold text-slate-950">
-                                {formatShares(quote?.totalShares)}
-                              </span>
-                            </div>
-                            {quote?.totalSharesDate ? (
-                              <div className={`font-mono text-[11px] ${hasOlderShareSnapshot(quote) ? "text-amber-700" : "text-slate-500"}`}>
-                                {hasOlderShareSnapshot(quote) ? "旧快照 · " : ""}{quote.totalSharesDate}
-                              </div>
-                            ) : null}
-                            <div
-                              className={`grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-1.5 font-semibold ${metricClass(
-                                quote?.netShareChange,
-                              )}`}
-                            >
-                              <span className="whitespace-nowrap">
-                                {shareChangeLabel(quote?.netShareChange)}
-                              </span>
-                              <span className="whitespace-nowrap font-mono">
-                                {quote?.netShareChange == null
-                                  ? "首次记录"
-                                  : formatShares(quote.netShareChange)}
-                              </span>
-                            </div>
-                            {quote?.previousTotalSharesDate ? (
-                              <div className="whitespace-nowrap text-[11px] text-slate-500">
-                                较 {formatShortDate(quote.previousTotalSharesDate)}
-                              </div>
-                            ) : null}
-                          </div>
+                          <QdiiShareCell quote={quote} />
                         </td>
                         <td
                           className="px-2 py-2"
@@ -2343,6 +2214,7 @@ export function ReportDashboard({
   const hasAutoRefreshedStablecoins = useRef(false);
   const [qdiiQuotes, setQdiiQuotes] = useState<Record<string, QdiiEtfQuote>>({});
   const [isQdiiLoading, setIsQdiiLoading] = useState(false);
+  const qdiiRequestInFlight = useRef(false);
   const [qdiiMessage, setQdiiMessage] = useState<string | null>(null);
   const [dividendSnapshot, setDividendSnapshot] = useState<AshareDividendSnapshot | null>(null);
   const [isDividendLoading, setIsDividendLoading] = useState(false);
@@ -2445,6 +2317,8 @@ export function ReportDashboard({
   }, [isRefreshing]);
 
   const refreshQdiiQuotes = useCallback(async () => {
+    if (qdiiRequestInFlight.current) return;
+    qdiiRequestInFlight.current = true;
     setIsQdiiLoading(true);
     setHasRefreshedQdii(true);
     setQdiiMessage("正在获取当前 QDII 价格、溢价率和申购状态...");
@@ -2452,14 +2326,19 @@ export function ReportDashboard({
     try {
       const response = await fetch("/api/qdii/quotes?live=1", {
         cache: "no-store",
+        signal: AbortSignal.timeout(15000),
       });
       if (!response.ok) {
         throw new Error(`QDII 行情更新失败：${response.status}`);
       }
       const data = (await response.json()) as {
         quotes: Record<string, QdiiEtfQuote>;
+        shareHistoryDegraded?: boolean;
       };
-      const quotes = enrichQdiiQuotesWithClientSnapshots(data.quotes);
+      if (!data.quotes || typeof data.quotes !== "object" || Array.isArray(data.quotes)) {
+        throw new Error("QDII 返回的数据格式无效");
+      }
+      const quotes = data.quotes;
       const needsShareRefresh = Object.values(quotes).some(
         (quote) =>
           quote.totalShares == null ||
@@ -2470,14 +2349,17 @@ export function ReportDashboard({
       );
       setQdiiQuotes(quotes);
       setQdiiMessage(
-        needsShareRefresh
-          ? "已检查 QDII 行情和申购状态；部分总份额缺失或早于行情日期，请按每行日期核对"
+        data.shareHistoryDegraded
+          ? "已检查行情；份额存储暂不可用或未配置，历史数据按每行日期标示"
+          : needsShareRefresh
+          ? "已检查行情；部分份额观察快照较早或缺失，各项数据日期见表格"
           : "已检查 QDII 行情和申购状态，各项数据日期见表格",
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : "QDII 行情更新失败";
       setQdiiMessage(`${message}，已保留现有数据和列表`);
     } finally {
+      qdiiRequestInFlight.current = false;
       setIsQdiiLoading(false);
     }
   }, []);

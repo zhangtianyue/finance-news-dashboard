@@ -64,6 +64,10 @@ export type QdiiEtfQuote = {
   navTime: string | null;
   navSource: string;
   premiumRate: number | null;
+  quotedPremiumRate?: number | null;
+  premiumQuality?: "verified" | "calculated" | "mismatch" | "date-mismatch" | "missing";
+  premiumNote?: string;
+  navKind?: "reference" | "estimate" | "missing";
   sourceName: string;
   subscriptionStatus: string | null;
   redemptionStatus: string | null;
@@ -84,6 +88,8 @@ export type QdiiEtfQuote = {
   netShareChangePct: number | null;
   shareChangeSource: string | null;
   shareSnapshotNote: string | null;
+  shareDateBasis?: "observed" | "effective" | "legacy" | null;
+  shareChangeKind?: "daily" | "interval" | "observation" | "first" | "unverified" | "missing";
   updatedAt: string;
   status: "ok" | "partial" | "missing";
 };
